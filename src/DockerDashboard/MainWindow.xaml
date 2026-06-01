@@ -56,7 +56,7 @@
                         Command="{Binding AllUpBuildCommand}"
                         IsEnabled="{Binding CanAllUp}"
                         Foreground="#FF9800"
-                        ToolTip="重建 image 並啟動（修改程式碼後使用，耗時較長）">
+                        ToolTip="強制重建所有 image（--no-cache，砍掉舊 image 從頭建，耗時較長）">
                     <StackPanel Orientation="Horizontal">
                         <materialDesign:PackIcon Kind="Hammer" VerticalAlignment="Center" />
                         <TextBlock Text="重建啟動" Margin="6,0,0,0" VerticalAlignment="Center" />
@@ -253,11 +253,20 @@
                                                     <materialDesign:PackIcon Kind="Stop" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="重啟"
+                                            <MenuItem Header="重啟（快速）"
                                                       Command="{Binding Data.RestartServiceCommand, Source={StaticResource Proxy}}"
-                                                      CommandParameter="{Binding}">
+                                                      CommandParameter="{Binding}"
+                                                      ToolTip="只重啟 process，不重建 image">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Restart" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="重建重啟"
+                                                      Command="{Binding Data.RebuildRestartServiceCommand, Source={StaticResource Proxy}}"
+                                                      CommandParameter="{Binding}"
+                                                      ToolTip="重新 build image 後重啟（改動程式碼後使用）">
+                                                <MenuItem.Icon>
+                                                    <materialDesign:PackIcon Kind="Hammer" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <Separator />
@@ -342,8 +351,15 @@
                                     Command="{Binding RestartServiceCommand}"
                                     CommandParameter="{Binding SelectedService}"
                                     IsEnabled="{Binding SelectedService.IsRunning}"
-                                    ToolTip="重啟" Foreground="#FF9800">
+                                    ToolTip="重啟（快速，不重建 image）" Foreground="#FF9800">
                                 <materialDesign:PackIcon Kind="Restart" />
+                            </Button>
+                            <Button Style="{StaticResource MaterialDesignIconButton}"
+                                    Command="{Binding RebuildRestartServiceCommand}"
+                                    CommandParameter="{Binding SelectedService}"
+                                    IsEnabled="{Binding SelectedService.IsRunning}"
+                                    ToolTip="重建重啟（重新 build image，改動程式碼後使用）" Foreground="#9C27B0">
+                                <materialDesign:PackIcon Kind="Hammer" />
                             </Button>
                         </StackPanel>
                     </Grid>

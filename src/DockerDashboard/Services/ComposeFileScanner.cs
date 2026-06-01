@@ -11,6 +11,9 @@ namespace DockerDashboard.Services;
 
 public class ComposeFileScanner
 {
+    public DockerMode DockerMode { get; set; } = DockerMode.DockerDesktop;
+    public string WslDistroName { get; set; } = "Ubuntu";
+
     private static readonly string[] MainComposeFileNames =
     [
         "docker-compose.yml",
@@ -55,21 +58,48 @@ public class ComposeFileScanner
         {
             var directory = Path.GetDirectoryName(filePath)!;
 
-            var psi = new ProcessStartInfo
+            ProcessStartInfo psi;
+            if (DockerMode == DockerMode.Wsl2)
             {
-                FileName = "docker",
-                WorkingDirectory = directory,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-            psi.ArgumentList.Add("compose");
-            foreach (var arg in GetComposeFileArgs(directory))
-                psi.ArgumentList.Add(arg);
-            psi.ArgumentList.Add("config");
-            psi.ArgumentList.Add("--format");
-            psi.ArgumentList.Add("json");
+                psi = new ProcessStartInfo
+                {
+                    FileName = "wsl",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                psi.ArgumentList.Add("-d");
+                psi.ArgumentList.Add(WslDistroName);
+                psi.ArgumentList.Add("--cd");
+                psi.ArgumentList.Add(DockerCliService.ConvertToWslPath(directory));
+                psi.ArgumentList.Add("--");
+                psi.ArgumentList.Add("docker");
+                psi.ArgumentList.Add("compose");
+                foreach (var arg in GetComposeFileArgs(directory))
+                    psi.ArgumentList.Add(arg);
+                psi.ArgumentList.Add("config");
+                psi.ArgumentList.Add("--format");
+                psi.ArgumentList.Add("json");
+            }
+            else
+            {
+                psi = new ProcessStartInfo
+                {
+                    FileName = "docker",
+                    WorkingDirectory = directory,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                psi.ArgumentList.Add("compose");
+                foreach (var arg in GetComposeFileArgs(directory))
+                    psi.ArgumentList.Add(arg);
+                psi.ArgumentList.Add("config");
+                psi.ArgumentList.Add("--format");
+                psi.ArgumentList.Add("json");
+            }
 
             using var process = new Process { StartInfo = psi };
             process.Start();

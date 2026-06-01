@@ -36,7 +36,11 @@ public class DockerCliService : IDockerCliService
         return $"/mnt/{drive}/{rest}";
     }
 
-    private ProcessStartInfo CreatePsi(string command, IEnumerable<string> args, string? workingDirectory)
+    private ProcessStartInfo CreatePsi(
+        string command,
+        IEnumerable<string> args,
+        string? workingDirectory,
+        IReadOnlyDictionary<string, string>? wslEnvOverrides = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -61,6 +65,14 @@ public class DockerCliService : IDockerCliService
             }
 
             psi.ArgumentList.Add("--");
+
+            if (wslEnvOverrides?.Count > 0)
+            {
+                psi.ArgumentList.Add("env");
+                foreach (var kv in wslEnvOverrides)
+                    psi.ArgumentList.Add($"{kv.Key}={kv.Value}");
+            }
+
             psi.ArgumentList.Add(command);
             foreach (var arg in args)
                 psi.ArgumentList.Add(arg);
@@ -111,7 +123,7 @@ public class DockerCliService : IDockerCliService
     public async Task<(int ExitCode, string Output)> ComposeRestartAsync(
         string workingDirectory, string? serviceName = null, CancellationToken ct = default)
     {
-        var args = BuildComposeArgs(workingDirectory, ["up", "-d", "--build", "--force-recreate"]);
+        var args = BuildComposeArgs(workingDirectory, ["restart"]);
         if (!string.IsNullOrEmpty(serviceName))
             args.Add(serviceName);
 
@@ -296,7 +308,62 @@ public class DockerCliService : IDockerCliService
         process.BeginErrorReadLine();
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(TimeSpan.FromMinutes(5));
+        timeoutCts.CancelAfter(TimeSpan.FromMinutes(30));
+
+        try
+        {
+            await process.WaitForExitAsync(timeoutCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            try { process.Kill(entireProcessTree: true); } catch { }
+            return (-1, output.ToString() + "\n[操作逾時，已強制終止]");
+        }
+
+        return (process.ExitCode, output.ToString());
+    }
+
+    private async Task<(int ExitCode, string Output)> RunBuildCommandWithLogAsync(
+        string command, IEnumerable<string> args, string? workingDirectory,
+        Action<string> onOutput, CancellationToken ct)
+    {
+        var wslBuildEnv = IsWsl2
+            ? new Dictionary<string, string> { ["BUILDKIT_MAX_PARALLELISM"] = "1" }
+            : null;
+
+        var psi = CreatePsi(command, args, workingDirectory, wslBuildEnv);
+
+        psi.Environment["DOCKER_BUILDKIT"] = "1";
+        psi.Environment["COMPOSE_DOCKER_CLI_BUILD"] = "1";
+        if (!IsWsl2)
+            psi.Environment["BUILDKIT_MAX_PARALLELISM"] = "1";
+
+        using var process = new Process { StartInfo = psi };
+        var output = new StringBuilder();
+
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data != null)
+            {
+                output.AppendLine(e.Data);
+                onOutput(e.Data);
+            }
+        };
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data != null)
+            {
+                output.AppendLine(e.Data);
+                onOutput(e.Data);
+            }
+        };
+
+        process.Start();
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromMinutes(30));
 
         try
         {
@@ -341,11 +408,37 @@ public class DockerCliService : IDockerCliService
     public async Task<(int ExitCode, string Output)> ComposeRestartWithLogAsync(
         string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default)
     {
-        var args = BuildComposeArgs(workingDirectory, ["up", "-d", "--build", "--force-recreate"]);
+        var args = BuildComposeArgs(workingDirectory, ["restart"]);
         if (!string.IsNullOrEmpty(serviceName))
             args.Add(serviceName);
 
         return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
+    }
+
+    public async Task<(int ExitCode, string Output)> ComposeRebuildRestartWithLogAsync(
+        string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default)
+    {
+        // --no-deps：只重建目標 service，跳過 depends_on 依賴檢查（依賴本來就在跑時省去額外 round-trip）
+        var subcommands = serviceName != null
+            ? (IEnumerable<string>)["up", "-d", "--build", "--no-deps"]
+            : ["up", "-d", "--build"];
+        var args = BuildComposeArgs(workingDirectory, subcommands);
+        if (!string.IsNullOrEmpty(serviceName))
+            args.Add(serviceName);
+
+        return await RunBuildCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
+    }
+
+    public async Task<(int ExitCode, string Output)> ComposeForceRebuildWithLogAsync(
+        string workingDirectory, Action<string> onOutput, CancellationToken ct = default)
+    {
+        var buildArgs = BuildComposeArgs(workingDirectory, ["build", "--no-cache"]);
+        var (buildExit, _) = await RunBuildCommandWithLogAsync(ComposeCommand, buildArgs, workingDirectory, onOutput, ct);
+        if (buildExit != 0)
+            return (buildExit, string.Empty);
+
+        var upArgs = BuildComposeArgs(workingDirectory, ["up", "-d", "--remove-orphans"]);
+        return await RunCommandWithLogAsync(ComposeCommand, upArgs, workingDirectory, onOutput, ct);
     }
 
     public async Task<(int ExitCode, string Output)> ComposeStartWithLogAsync(

@@ -14,8 +14,11 @@ public partial class Wsl2GuideWindow : Window
     private void CopyStep3_Click(object sender, RoutedEventArgs e)  => Copy(Step3Box.Text);
     private void CopyStep4a_Click(object sender, RoutedEventArgs e) => Copy(Step4aBox.Text);
     private void CopyStep4b_Click(object sender, RoutedEventArgs e) => Copy(Step4bBox.Text);
-    private void CopyStep5_Click(object sender, RoutedEventArgs e)  => Copy(Step5Box.Text);
+    private void CopyStep5a_Click(object sender, RoutedEventArgs e) => Copy(Step5aBox.Text);
+    private void CopyStep5b_Click(object sender, RoutedEventArgs e) => Copy(Step5bBox.Text);
+    private void CopyStep6_Click(object sender, RoutedEventArgs e)  => Copy(Step6Box.Text);
     private void CopyFix1_Click(object sender, RoutedEventArgs e)   => Copy(Fix1Box.Text);
+    private void CopyFix2_Click(object sender, RoutedEventArgs e)   => Copy(Fix2Box.Text);
 
     private static void Copy(string text)
     {

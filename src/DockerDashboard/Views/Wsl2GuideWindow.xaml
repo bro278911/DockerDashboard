@@ -181,8 +181,54 @@
                     之後重新開啟 Ubuntu，Docker 將自動啟動
                 </TextBlock>
 
-                <!-- ── 步驟 5 ── -->
-                <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 5：驗證安裝</TextBlock>
+                <!-- ── 步驟 5（可選）── -->
+                <Border Background="#1A237E" CornerRadius="4" Padding="10,8" Margin="0,0,0,8">
+                    <TextBlock Foreground="#C5CAE9" TextWrapping="Wrap" FontSize="12">
+                        💡  以下步驟為可選，僅當你需要將 WSL2 安裝至 C 槽以外的磁碟時才需要執行
+                    </TextBlock>
+                </Border>
+                <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 5（可選）：搬移 WSL2 至指定磁碟（例如 D 槽）</TextBlock>
+                <Border Style="{StaticResource TerminalChipPs}">
+                    <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold" />
+                </Border>
+                <TextBlock TextWrapping="Wrap" Margin="0,0,0,6" FontSize="12">
+                    先匯出現有 distro，再重新匯入到目標位置（約需數分鐘）：
+                </TextBlock>
+                <Border Background="#263238" CornerRadius="4" Margin="0,0,0,4">
+                    <StackPanel>
+                        <Button HorizontalAlignment="Right" Content="複製"
+                                Style="{StaticResource MaterialDesignFlatButton}"
+                                Foreground="#78909C" FontSize="11" Height="26" Padding="8,0"
+                                Click="CopyStep5a_Click" />
+                        <TextBox x:Name="Step5aBox"
+                                 IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                 Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                 TextWrapping="Wrap" Padding="12,4,12,12"
+                                 Text="wsl --export Ubuntu D:\WSL\Ubuntu.tar&#x0a;wsl --unregister Ubuntu&#x0a;wsl --import Ubuntu D:\WSL\Ubuntu D:\WSL\Ubuntu.tar --version 2" />
+                    </StackPanel>
+                </Border>
+                <TextBlock TextWrapping="Wrap" Margin="0,0,0,6" FontSize="12">
+                    匯入後預設使用者會變成 root，執行以下指令修正（將 your_username 替換為你的帳號）：
+                </TextBlock>
+                <Border Background="#263238" CornerRadius="4" Margin="0,0,0,4">
+                    <StackPanel>
+                        <Button HorizontalAlignment="Right" Content="複製"
+                                Style="{StaticResource MaterialDesignFlatButton}"
+                                Foreground="#78909C" FontSize="11" Height="26" Padding="8,0"
+                                Click="CopyStep5b_Click" />
+                        <TextBox x:Name="Step5bBox"
+                                 IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                 Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                 TextWrapping="Wrap" Padding="12,4,12,12"
+                                 Text="Ubuntu config --default-user your_username" />
+                    </StackPanel>
+                </Border>
+                <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,24">
+                    D 槽需為 NTFS 格式；WSL kernel 本體仍在 C 槽，搬移的是 distro 的虛擬磁碟 (.vhdx)
+                </TextBlock>
+
+                <!-- ── 步驟 6 ── -->
+                <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 6：驗證安裝</TextBlock>
                 <Border Style="{StaticResource TerminalChipWsl}">
                     <TextBlock Text="🐧  WSL Ubuntu 終端" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold" />
                 </Border>
@@ -194,8 +240,8 @@
                         <Button HorizontalAlignment="Right" Content="複製"
                                 Style="{StaticResource MaterialDesignFlatButton}"
                                 Foreground="#78909C" FontSize="11" Height="26" Padding="8,0"
-                                Click="CopyStep5_Click" />
-                        <TextBox x:Name="Step5Box"
+                                Click="CopyStep6_Click" />
+                        <TextBox x:Name="Step6Box"
                                  IsReadOnly="True" Background="Transparent" BorderThickness="0"
                                  Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
                                  TextWrapping="Wrap" Padding="12,4,12,12"
@@ -250,6 +296,46 @@
                         <TextBlock Foreground="#ECEFF1" FontSize="12" TextWrapping="Wrap">
                             原因：步驟 2 的指令被貼到 Windows PowerShell 執行。這些指令必須在 WSL Ubuntu 終端機中執行。
                             請開啟「開始功能表」→ 搜尋「Ubuntu」→ 開啟後再執行。
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- Q3: 建置 OOM -->
+                <Border Background="#37474F" CornerRadius="4" Padding="12,10" Margin="0,0,0,8">
+                    <StackPanel>
+                        <TextBlock Foreground="#EF9A9A" FontWeight="Bold" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4">
+                            ❌  建置（重建 image）時卡住、失敗或 WSL2 記憶體不足
+                        </TextBlock>
+                        <TextBlock Foreground="#ECEFF1" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8">
+                            WSL2 預設最多使用主機 50% 記憶體，建置大型 image 時容易 OOM。
+                            在 Windows 建立 .wslconfig 設定檔限制或擴充資源：
+                        </TextBlock>
+                        <Border Style="{StaticResource TerminalChipPs}">
+                            <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold" />
+                        </Border>
+                        <Border Background="#263238" CornerRadius="4" Margin="0,4,0,8">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製"
+                                        Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0"
+                                        Click="CopyFix2_Click" />
+                                <TextBox x:Name="Fix2Box"
+                                         IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="# 建立或編輯 %USERPROFILE%\.wslconfig&#x0a;notepad &quot;$env:USERPROFILE\.wslconfig&quot;" />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="#ECEFF1" FontSize="12" Margin="0,0,0,4">在檔案中加入：</TextBlock>
+                        <Border Background="#263238" CornerRadius="4" Margin="0,0,0,8">
+                            <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                     Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                     TextWrapping="Wrap" Padding="12,8"
+                                     Text="[wsl2]&#x0a;memory=8GB&#x0a;processors=4" />
+                        </Border>
+                        <TextBlock Foreground="#B0BEC5" FontSize="11" TextWrapping="Wrap">
+                            設定後執行 wsl --shutdown 重啟 WSL2 生效。memory 建議設為主機實體記憶體的 50~75%。
+                            本工具在 WSL2 模式下已自動限制建置並行數（BUILDKIT_MAX_PARALLELISM=1）以降低記憶體需求。
                         </TextBlock>
                     </StackPanel>
                 </Border>

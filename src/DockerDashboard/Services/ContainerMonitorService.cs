@@ -79,14 +79,13 @@ public class ContainerMonitorService : IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
+            ProcessStream? stream = null;
             try
             {
-                var stream = _dockerCli.StartDockerEvents();
+                stream = _dockerCli.StartDockerEvents();
                 if (ct.IsCancellationRequested)
-                {
-                    stream.Dispose();
                     break;
-                }
+
                 _eventsProcess = stream;
                 var reader = stream.StandardOutput;
 
@@ -109,7 +108,18 @@ public class ContainerMonitorService : IDisposable
             catch (Exception ex)
             {
                 Debug.WriteLine($"[ContainerMonitor] EventsLoop error: {ex.Message}");
-                try { await Task.Delay(3000, ct); } catch { break; }
+            }
+            finally
+            {
+                stream?.Dispose();
+                if (ReferenceEquals(_eventsProcess, stream))
+                    _eventsProcess = null;
+            }
+
+            if (!ct.IsCancellationRequested)
+            {
+                try { await Task.Delay(3000, ct); }
+                catch (OperationCanceledException) { break; }
             }
         }
     }

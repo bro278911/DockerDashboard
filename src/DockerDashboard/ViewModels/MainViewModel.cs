@@ -272,35 +272,33 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
 
         IsOperating = true;
-        StatusMessage = "正在並行啟動所有服務（含重建 image）...";
+        StatusMessage = "正在並行強制重建所有 image 並啟動（不使用 cache）...";
         LogLines.Clear();
-        AppendLog($"[{DateTime.Now:HH:mm:ss}] ▶ 全部啟動（含重建 image，耗時較長）");
+        AppendLog($"[{DateTime.Now:HH:mm:ss}] ▶ 全部強制重建（--no-cache，耗時較長）");
 
         var composeFiles = Projects.SelectMany(p => p.ComposeFiles).ToList();
         var errors = new ConcurrentBag<string>();
 
-        var tasks = composeFiles.Select(async compose =>
-        {
-            try
-            {
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] 重建+啟動 {compose.FileName} ...");
-                var (exitCode, _) = await _dockerCli.ComposeUpWithLogAsync(
-                    compose.DirectoryPath, AppendLog);
-                if (exitCode != 0)
-                    errors.Add(compose.FileName);
-                else
-                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 重建+啟動完成");
-            }
-            catch (Exception ex)
-            {
-                errors.Add($"{compose.FileName}: {ex.Message}");
-                AppendLog($"[例外] {ex.Message}");
-            }
-        });
-
         try
         {
-            await Task.WhenAll(tasks);
+            foreach (var compose in composeFiles)
+            {
+                try
+                {
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] 強制重建+啟動 {compose.FileName} ...");
+                    var (exitCode, _) = await _dockerCli.ComposeForceRebuildWithLogAsync(
+                        compose.DirectoryPath, AppendLog);
+                    if (exitCode != 0)
+                        errors.Add(compose.FileName);
+                    else
+                        AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 強制重建+啟動完成");
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"{compose.FileName}: {ex.Message}");
+                    AppendLog($"[例外] {ex.Message}");
+                }
+            }
         }
         finally
         {
@@ -454,7 +452,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (service == null) return;
         IsOperating = true;
         StatusMessage = $"正在重啟 {service.Name}...";
-        AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔄 重啟 {service.Name}");
+        AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔄 重啟 {service.Name}（不重建 image）");
 
         try
         {
@@ -474,6 +472,41 @@ public partial class MainViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             StatusMessage = $"⚠ {service.Name} 重啟失敗: {ex.Message}";
+            AppendLog($"[例外] {ex.Message}");
+        }
+        finally
+        {
+            await _monitor.ForceRefreshAsync();
+            IsOperating = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task RebuildRestartServiceAsync(DockerService? service)
+    {
+        if (service == null) return;
+        IsOperating = true;
+        StatusMessage = $"正在重建並重啟 {service.Name}...";
+        AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔨 重建重啟 {service.Name}（重新 build image）");
+
+        try
+        {
+            var (exitCode, _) = await _dockerCli.ComposeRebuildRestartWithLogAsync(
+                service.WorkingDirectory, AppendLog, service.Name);
+            if (exitCode != 0)
+            {
+                StatusMessage = $"⚠ {service.Name} 重建重啟失敗";
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {service.Name} 重建重啟失敗 (exit code: {exitCode})");
+            }
+            else
+            {
+                StatusMessage = $"✅ {service.Name} 已重建並重啟";
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {service.Name} 重建重啟完成");
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"⚠ {service.Name} 重建重啟失敗: {ex.Message}";
             AppendLog($"[例外] {ex.Message}");
         }
         finally
@@ -754,6 +787,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _dockerCli.UseComposeV2 = settings.UseComposeV2;
         _dockerCli.DockerMode = settings.DockerMode;
         _dockerCli.WslDistroName = settings.WslDistroName;
+        _scanner.DockerMode = settings.DockerMode;
+        _scanner.WslDistroName = settings.WslDistroName;
         DockerModeLabel = settings.DockerMode == DockerMode.Wsl2
             ? $"WSL2 ({settings.WslDistroName})"
             : "Docker Desktop";
