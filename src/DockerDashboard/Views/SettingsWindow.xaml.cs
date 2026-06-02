@@ -19,6 +19,8 @@ public partial class SettingsWindow : Window
         PollSlider.Value = settings.PollIntervalSeconds;
         ComposeV2Toggle.IsChecked = settings.UseComposeV2;
         WslDistroBox.Text = settings.WslDistroName;
+        AutoWatchToggle.IsChecked = settings.AutoWatchEnabled;
+        WatchDebounceSlider.Value = settings.WatchDebounceSeconds;
 
         if (settings.DockerMode == DockerMode.Wsl2)
             ModeWsl2.IsChecked = true;
@@ -63,10 +65,30 @@ public partial class SettingsWindow : Window
                 return;
             }
 
-            var (dockerOk, dockerMsg) = await TestDockerInWslAsync(distro);
+            // WSL 剛啟動時 [boot] 的 service docker start 需要幾秒才完成，
+            // 最多等 12 秒（每次 1.5 秒，共 8 次）再回報失敗
+            const int maxAttempts = 8;
+            bool dockerOk = false;
+            string dockerMsg = string.Empty;
+
+            for (int i = 0; i < maxAttempts; i++)
+            {
+                if (i > 0)
+                {
+                    TestResultText.Text = $"⏳ 等待 Docker 啟動… ({i}/{maxAttempts - 1})";
+                    await Task.Delay(1500);
+                }
+
+                (dockerOk, dockerMsg) = await TestDockerInWslAsync(distro);
+                if (dockerOk) break;
+            }
+
             if (!dockerOk)
             {
-                TestResultText.Text = $"❌ WSL2 中 Docker 不可用：{dockerMsg}";
+                var hint = dockerMsg.Contains("connect", StringComparison.OrdinalIgnoreCase)
+                    ? $"❌ Docker daemon 未啟動：{dockerMsg}\n💡 請在 Ubuntu 終端執行：sudo service docker start"
+                    : $"❌ WSL2 中 Docker 不可用：{dockerMsg}";
+                TestResultText.Text = hint;
                 TestResultText.Foreground = System.Windows.Media.Brushes.OrangeRed;
                 return;
             }
@@ -158,6 +180,8 @@ public partial class SettingsWindow : Window
         _settings.UseComposeV2 = ComposeV2Toggle.IsChecked == true;
         _settings.DockerMode = ModeWsl2.IsChecked == true ? DockerMode.Wsl2 : DockerMode.DockerDesktop;
         _settings.WslDistroName = WslDistroBox.Text.Trim();
+        _settings.AutoWatchEnabled = AutoWatchToggle.IsChecked == true;
+        _settings.WatchDebounceSeconds = (int)WatchDebounceSlider.Value;
 
         if (string.IsNullOrEmpty(_settings.WslDistroName))
             _settings.WslDistroName = "Ubuntu";

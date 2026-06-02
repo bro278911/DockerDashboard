@@ -98,6 +98,16 @@
                 <Separator Style="{StaticResource MaterialDesignLightSeparator}" Margin="8,0" />
 
                 <Button Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{Binding OpenRepairWindowCommand}"
+                        Foreground="#FF9800"
+                        ToolTip="修復 Docker（清除損毀 image/volume）">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon Kind="Wrench" VerticalAlignment="Center" />
+                        <TextBlock Text="修復" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <Button Style="{StaticResource MaterialDesignFlatButton}"
                         Command="{Binding OpenSettingsCommand}"
                         ToolTip="開啟設定">
                     <StackPanel Orientation="Horizontal">
@@ -235,8 +245,25 @@
                                                Foreground="{Binding Status, Converter={StaticResource StatusToColorConverter}}"
                                                FontSize="12" VerticalAlignment="Center" />
                                     <TextBlock Text="{Binding Name}" Margin="6,0,0,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding Image}" Margin="8,0,0,0" 
+                                    <TextBlock Text="{Binding Image}" Margin="8,0,0,0"
                                                Foreground="Gray" FontSize="11" VerticalAlignment="Center" />
+                                    <!-- Auto Watch 開關 -->
+                                    <Button Width="20" Height="20" Padding="0" Margin="6,0,0,0"
+                                            Command="{Binding Data.ToggleWatchServiceCommand, Source={StaticResource Proxy}}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip="Auto Watch：啟用後，原始碼變動會自動重建並重啟此服務（需在設定開啟全域開關）">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignIconButton}">
+                                                <Setter Property="Foreground" Value="Gray" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsWatching}" Value="True">
+                                                        <Setter Property="Foreground" Value="#4CAF50" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                        <materialDesign:PackIcon Kind="Eye" Width="13" Height="13" />
+                                    </Button>
                                     <StackPanel.ContextMenu>
                                         <ContextMenu>
                                             <MenuItem Header="啟動"
@@ -267,6 +294,15 @@
                                                       ToolTip="重新 build image 後重啟（改動程式碼後使用）">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Hammer" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <Separator />
+                                            <MenuItem Header="Auto Watch 開關"
+                                                      Command="{Binding Data.ToggleWatchServiceCommand, Source={StaticResource Proxy}}"
+                                                      CommandParameter="{Binding}"
+                                                      ToolTip="檔案變動自動重建">
+                                                <MenuItem.Icon>
+                                                    <materialDesign:PackIcon Kind="Eye" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <Separator />
@@ -360,6 +396,22 @@
                                     IsEnabled="{Binding SelectedService.IsRunning}"
                                     ToolTip="重建重啟（重新 build image，改動程式碼後使用）" Foreground="#9C27B0">
                                 <materialDesign:PackIcon Kind="Hammer" />
+                            </Button>
+                            <!-- Auto Watch 開關 -->
+                            <Button Command="{Binding ToggleWatchServiceCommand}"
+                                    CommandParameter="{Binding SelectedService}"
+                                    ToolTip="Auto Watch：啟用後，原始碼變動自動重建並重啟（需在設定開啟全域開關）">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignIconButton}">
+                                        <Setter Property="Foreground" Value="Gray" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedService.IsWatching}" Value="True">
+                                                <Setter Property="Foreground" Value="#4CAF50" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <materialDesign:PackIcon Kind="Eye" />
                             </Button>
                         </StackPanel>
                     </Grid>

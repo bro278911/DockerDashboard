@@ -15,6 +15,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -75,8 +76,29 @@
                     HorizontalAlignment="Left" Click="OpenWsl2Guide_Click" />
         </StackPanel>
 
+        <!-- Auto Watch & Rebuild -->
+        <StackPanel Grid.Row="4" Margin="0,0,0,16">
+            <DockPanel>
+                <TextBlock Text="Auto Watch &amp; Rebuild（檔案變動自動重建）"
+                           VerticalAlignment="Center" DockPanel.Dock="Left" />
+                <ToggleButton x:Name="AutoWatchToggle" DockPanel.Dock="Right"
+                              HorizontalAlignment="Right"
+                              Style="{StaticResource MaterialDesignSwitchToggleButton}" />
+            </DockPanel>
+            <DockPanel Margin="0,8,0,0">
+                <TextBlock DockPanel.Dock="Left" Text="Debounce 延遲："
+                           VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBlock DockPanel.Dock="Right"
+                           Text="{Binding ElementName=WatchDebounceSlider, Path=Value, StringFormat={}{0:0} 秒}"
+                           VerticalAlignment="Center" Margin="12,0,0,0" Width="44" />
+                <Slider x:Name="WatchDebounceSlider" Minimum="1" Maximum="10"
+                        TickFrequency="1" IsSnapToTickEnabled="True"
+                        Style="{StaticResource MaterialDesignDiscreteSlider}" />
+            </DockPanel>
+        </StackPanel>
+
         <!-- 按鈕 -->
-        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right">
+        <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="取消" Style="{StaticResource MaterialDesignFlatButton}"
                     IsCancel="True" Margin="0,0,8,0" Click="Cancel_Click" />
             <Button Content="儲存" Style="{StaticResource MaterialDesignRaisedButton}"
