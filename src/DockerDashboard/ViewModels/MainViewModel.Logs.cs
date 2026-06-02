@@ -29,6 +29,11 @@ public partial class MainViewModel
     {
         if (value != null)
             ViewLogs(value);
+        else
+        {
+            StopLogStream();
+            StatusMessage = "就緒";
+        }
     }
 
     [RelayCommand]

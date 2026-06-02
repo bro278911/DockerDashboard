@@ -79,8 +79,12 @@ public partial class MainWindow : Window
     {
         if (e.NewValue is DockerService service)
             _viewModel.SelectedService = service;
-        else if (e.NewValue is ComposeFile compose)
-            _viewModel.SelectedComposeFile = compose;
+        else
+        {
+            _viewModel.SelectedService = null;
+            if (e.NewValue is ComposeFile compose)
+                _viewModel.SelectedComposeFile = compose;
+        }
     }
 
     private void OpenPort_Click(object sender, RoutedEventArgs e)
