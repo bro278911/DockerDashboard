@@ -11,6 +11,7 @@ public interface IDockerCliService
     bool UseComposeV2 { get; set; }
     DockerMode DockerMode { get; set; }
     string WslDistroName { get; set; }
+    int BuildKitParallelism { get; set; }
 
     Task<bool> IsDockerAvailableAsync(CancellationToken ct = default);
 

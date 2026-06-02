@@ -21,6 +21,7 @@ public partial class SettingsWindow : Window
         WslDistroBox.Text = settings.WslDistroName;
         AutoWatchToggle.IsChecked = settings.AutoWatchEnabled;
         WatchDebounceSlider.Value = settings.WatchDebounceSeconds;
+        BuildKitSlider.Value = settings.BuildKitParallelism;
 
         if (settings.DockerMode == DockerMode.Wsl2)
             ModeWsl2.IsChecked = true;
@@ -182,6 +183,7 @@ public partial class SettingsWindow : Window
         _settings.WslDistroName = WslDistroBox.Text.Trim();
         _settings.AutoWatchEnabled = AutoWatchToggle.IsChecked == true;
         _settings.WatchDebounceSeconds = (int)WatchDebounceSlider.Value;
+        _settings.BuildKitParallelism = Math.Clamp((int)BuildKitSlider.Value, 0, 8);
 
         if (string.IsNullOrEmpty(_settings.WslDistroName))
             _settings.WslDistroName = "Ubuntu";
