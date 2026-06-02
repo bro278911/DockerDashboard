@@ -33,7 +33,7 @@ public partial class MainWindow : Window
         };
 
         var iconPath = System.IO.Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory, "Assets", "docker.ico");
+            AppDomain.CurrentDomain.BaseDirectory, "Assets", "pooh.ico");
         if (System.IO.File.Exists(iconPath))
             _notifyIcon.Icon = new Drawing.Icon(iconPath);
         else
