@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -41,8 +42,31 @@ public class ContainerMonitorService : IDisposable
         _cts?.Cancel();
         _eventsProcess?.Dispose();
         _eventsProcess = null;
-        try { _monitorTask?.Wait(TimeSpan.FromSeconds(3)); } catch (AggregateException) { }
-        try { _eventsTask?.Wait(TimeSpan.FromSeconds(2)); } catch (AggregateException) { }
+        _timer?.Dispose();
+        _timer = null;
+        _monitorTask = null;
+        _eventsTask = null;
+        _cts?.Dispose();
+        _cts = null;
+    }
+
+    public async Task StopAsync()
+    {
+        _cts?.Cancel();
+        _eventsProcess?.Dispose();
+        _eventsProcess = null;
+
+        var tasks = new[] { _monitorTask, _eventsTask }
+            .Where(t => t is { IsCompleted: false })
+            .Select(t => t!)
+            .ToArray();
+
+        if (tasks.Length > 0)
+        {
+            try { await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(5)); }
+            catch { }
+        }
+
         _monitorTask = null;
         _eventsTask = null;
         _timer?.Dispose();

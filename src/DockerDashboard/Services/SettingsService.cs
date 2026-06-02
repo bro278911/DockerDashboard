@@ -18,21 +18,23 @@ public class SettingsService
         WriteIndented = true
     };
 
+    private AppSettings? _cached;
+
     public async Task<AppSettings> LoadAsync()
     {
+        if (_cached != null) return _cached;
+
         if (!File.Exists(SettingsPath))
-            return new AppSettings();
+            return _cached = new AppSettings();
 
         var json = await File.ReadAllTextAsync(SettingsPath);
-        return JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+        return _cached = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
     }
 
     public async Task SaveAsync(AppSettings settings)
     {
-        var dir = Path.GetDirectoryName(SettingsPath)!;
-        Directory.CreateDirectory(dir);
-
-        var json = JsonSerializer.Serialize(settings, JsonOptions);
-        await File.WriteAllTextAsync(SettingsPath, json);
+        _cached = settings;
+        Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
+        await File.WriteAllTextAsync(SettingsPath, JsonSerializer.Serialize(settings, JsonOptions));
     }
 }
