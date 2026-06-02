@@ -50,6 +50,12 @@ public interface IDockerCliService
     Task<(int ExitCode, string Output)> ComposeRestartWithLogAsync(
         string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default);
 
+    Task<(int ExitCode, string Output)> ComposeRebuildRestartWithLogAsync(
+        string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default);
+
+    Task<(int ExitCode, string Output)> ComposeForceRebuildWithLogAsync(
+        string workingDirectory, Action<string> onOutput, CancellationToken ct = default);
+
     Task<(int ExitCode, string Output)> ComposeStartWithLogAsync(
         string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default);
 
@@ -60,4 +66,16 @@ public interface IDockerCliService
         string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default);
 
     ProcessStream StartDockerEvents();
+
+    Task<(int ExitCode, string Output)> DockerImagePruneAsync(
+        bool all, Action<string> onOutput, CancellationToken ct = default);
+
+    Task<(int ExitCode, string Output)> DockerVolumePruneAsync(
+        Action<string> onOutput, CancellationToken ct = default);
+
+    Task<(int ExitCode, string Output)> DockerNetworkPruneAsync(
+        Action<string> onOutput, CancellationToken ct = default);
+
+    Task<(int ExitCode, string Output)> DockerSystemPruneAsync(
+        bool all, bool includeVolumes, Action<string> onOutput, CancellationToken ct = default);
 }

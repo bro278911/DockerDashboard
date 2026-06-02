@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
-        Title="WSL2 Docker 安裝指南" Height="760" Width="640"
+        Title="WSL2 + Docker 安裝指南" Height="840" Width="700"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResize"
         Background="{DynamicResource MaterialDesign.Brush.Background}"
@@ -10,255 +10,659 @@
         FontFamily="{materialDesign:MaterialDesignFont}">
 
     <Window.Resources>
-        <Style x:Key="TerminalChipPs" TargetType="Border">
-            <Setter Property="Background" Value="#1565C0" />
-            <Setter Property="CornerRadius" Value="10" />
-            <Setter Property="Padding" Value="10,3" />
-            <Setter Property="HorizontalAlignment" Value="Left" />
-            <Setter Property="Margin" Value="0,0,0,6" />
+        <Style x:Key="ChipPs" TargetType="Border">
+            <Setter Property="Background" Value="#1565C0"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="10,3"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
         </Style>
-        <Style x:Key="TerminalChipWsl" TargetType="Border">
-            <Setter Property="Background" Value="#1B5E20" />
-            <Setter Property="CornerRadius" Value="10" />
-            <Setter Property="Padding" Value="10,3" />
-            <Setter Property="HorizontalAlignment" Value="Left" />
-            <Setter Property="Margin" Value="0,0,0,6" />
+        <Style x:Key="ChipWsl" TargetType="Border">
+            <Setter Property="Background" Value="#1B5E20"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="10,3"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+        <Style x:Key="CodeBlock" TargetType="Border">
+            <Setter Property="Background" Value="#263238"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+        <Style x:Key="InfoBox" TargetType="Border">
+            <Setter Property="Background" Value="#1A237E"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+        <Style x:Key="WarnBox" TargetType="Border">
+            <Setter Property="Background" Value="#4A148C"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+        <Style x:Key="DangerBox" TargetType="Border">
+            <Setter Property="Background" Value="#B71C1C"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+        <Style x:Key="FaqBox" TargetType="Border">
+            <Setter Property="Background" Value="#37474F"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
         </Style>
     </Window.Resources>
 
     <Grid Margin="24">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="WSL2 Docker Engine 安裝步驟"
+        <TextBlock Grid.Row="0" Text="WSL2 + Docker 安裝指南"
                    Style="{StaticResource MaterialDesignHeadline6TextBlock}"
-                   Margin="0,0,0,16" />
+                   Margin="0,0,0,12"/>
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <StackPanel>
+        <TabControl Grid.Row="1">
 
-                <!-- ── 步驟 1 ── -->
-                <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 1：安裝 WSL2</TextBlock>
-                <Border Style="{StaticResource TerminalChipPs}">
-                    <TextBlock Text="📋  PowerShell（系統管理員）" Foreground="White" FontSize="11" FontWeight="SemiBold" />
-                </Border>
-                <TextBlock TextWrapping="Wrap" Margin="0,0,0,6" FontSize="12">
-                    以系統管理員身份開啟 PowerShell，執行下列指令，完成後重新啟動 Windows：
-                </TextBlock>
-                <Border Background="#263238" CornerRadius="4" Margin="0,0,0,4">
-                    <StackPanel>
-                        <Button HorizontalAlignment="Right" Content="複製"
-                                Style="{StaticResource MaterialDesignFlatButton}"
-                                Foreground="#78909C" FontSize="11" Height="26" Padding="8,0"
-                                Click="CopyStep1_Click" />
-                        <TextBox x:Name="Step1Box"
-                                 IsReadOnly="True" Background="Transparent" BorderThickness="0"
-                                 Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
-                                 TextWrapping="Wrap" Padding="12,4,12,12"
-                                 Text="wsl --install" />
-                    </StackPanel>
-                </Border>
-                <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,8">
-                    預設安裝 Ubuntu；若需指定版本：wsl --install -d Ubuntu-24.04
-                </TextBlock>
+            <!-- ══════════════ 方法一：標準安裝 C 槽 ══════════════ -->
+            <TabItem Header="方法一：標準安裝（C 槽）">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="4,12,4,0">
 
-                <!-- 重新啟動後說明 -->
-                <Border Background="#263238" CornerRadius="4" Padding="12,10" Margin="0,0,0,24">
-                    <StackPanel>
-                        <TextBlock Foreground="#FFD54F" FontWeight="Bold" FontSize="12" Margin="0,0,0,6">
-                            重新啟動 Windows 後，如何開啟 Ubuntu 終端？
-                        </TextBlock>
-                        <TextBlock Foreground="#ECEFF1" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4">
-                            方法 A：開始功能表 → 搜尋「Ubuntu」→ 點擊開啟
-                        </TextBlock>
-                        <TextBlock Foreground="#ECEFF1" FontSize="12" Margin="0,0,0,4">方法 B：在任意終端輸入：</TextBlock>
-                        <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
-                                 Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
-                                 Text="wsl" Padding="0,0,0,2" />
-                        <TextBlock Foreground="#B0BEC5" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0">
-                            ⚠️  步驟 2 以後的所有指令，請在 Ubuntu 終端中執行，不是 PowerShell！
-                        </TextBlock>
-                    </StackPanel>
-                </Border>
-
-                <!-- ── 步驟 2 ── -->
-                <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 2：安裝 Docker Engine</TextBlock>
-                <Border Style="{StaticResource TerminalChipWsl}">
-                    <TextBlock Text="🐧  WSL Ubuntu 終端（不是 PowerShell）" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold" />
-                </Border>
-                <TextBlock TextWrapping="Wrap" Margin="0,0,0,6" FontSize="12">
-                    在 Ubuntu 終端中，依序執行以下指令：
-                </TextBlock>
-                <Border Background="#263238" CornerRadius="4" Margin="0,0,0,4">
-                    <StackPanel>
-                        <Button HorizontalAlignment="Right" Content="複製"
-                                Style="{StaticResource MaterialDesignFlatButton}"
-                                Foreground="#78909C" FontSize="11" Height="26" Padding="8,0"
-                                Click="CopyStep2_Click" />
-                        <TextBox x:Name="Step2Box"
-                                 IsReadOnly="True" Background="Transparent" BorderThickness="0"
-                                 Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
-                                 TextWrapping="Wrap" Padding="12,4,12,12"
-                                 Text="curl -fsSL https://get.docker.com | sh&#x0a;sudo usermod -aG docker $USER" />
-                    </StackPanel>
-                </Border>
-                <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,24">
-                    完成後關閉 Ubuntu 視窗並重新開啟（讓 docker 群組設定生效）
-                </TextBlock>
-
-                <!-- ── 步驟 3（Ubuntu 22.04 限定） ── -->
-                <Border Background="#4A148C" CornerRadius="4" Padding="10,8" Margin="0,0,0,8">
-                    <TextBlock Foreground="#E1BEE7" TextWrapping="Wrap" FontSize="12">
-                        ℹ️  以下步驟僅 Ubuntu 22.04 需要，Ubuntu 24.04 請直接跳到步驟 4
-                    </TextBlock>
-                </Border>
-                <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 3：修正 iptables（Ubuntu 22.04 限定）</TextBlock>
-                <Border Style="{StaticResource TerminalChipWsl}">
-                    <TextBlock Text="🐧  WSL Ubuntu 終端" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold" />
-                </Border>
-                <TextBlock TextWrapping="Wrap" Margin="0,0,0,6" FontSize="12">
-                    Ubuntu 22.04 預設使用 nftables，Docker 無法啟動，需切換為 legacy 模式：
-                </TextBlock>
-                <Border Background="#263238" CornerRadius="4" Margin="0,0,0,24">
-                    <StackPanel>
-                        <Button HorizontalAlignment="Right" Content="複製"
-                                Style="{StaticResource MaterialDesignFlatButton}"
-                                Foreground="#78909C" FontSize="11" Height="26" Padding="8,0"
-                                Click="CopyStep3_Click" />
-                        <TextBox x:Name="Step3Box"
-                                 IsReadOnly="True" Background="Transparent" BorderThickness="0"
-                                 Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
-                                 TextWrapping="Wrap" Padding="12,4,12,12"
-                                 Text="sudo update-alternatives --set iptables /usr/sbin/iptables-legacy" />
-                    </StackPanel>
-                </Border>
-
-                <!-- ── 步驟 4 ── -->
-                <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 4：設定 Docker 自動啟動（可選）</TextBlock>
-
-                <TextBlock TextWrapping="Wrap" Margin="0,0,0,6" FontSize="12">① 在 Ubuntu 終端中寫入設定檔：</TextBlock>
-                <Border Style="{StaticResource TerminalChipWsl}">
-                    <TextBlock Text="🐧  WSL Ubuntu 終端" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold" />
-                </Border>
-                <Border Background="#263238" CornerRadius="4" Margin="0,0,0,4">
-                    <StackPanel>
-                        <Button HorizontalAlignment="Right" Content="複製"
-                                Style="{StaticResource MaterialDesignFlatButton}"
-                                Foreground="#78909C" FontSize="11" Height="26" Padding="8,0"
-                                Click="CopyStep4a_Click" />
-                        <TextBox x:Name="Step4aBox"
-                                 IsReadOnly="True" Background="Transparent" BorderThickness="0"
-                                 Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
-                                 TextWrapping="Wrap" Padding="12,4,12,12"
-                                 Text="printf '[boot]\ncommand = service docker start\n' | sudo tee /etc/wsl.conf" />
-                    </StackPanel>
-                </Border>
-                <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,10">
-                    若 /etc/wsl.conf 已存在，請手動加入 [boot] 段落
-                </TextBlock>
-
-                <TextBlock TextWrapping="Wrap" Margin="0,0,0,6" FontSize="12">② 關閉 Ubuntu 視窗，然後在 PowerShell 執行：</TextBlock>
-                <Border Style="{StaticResource TerminalChipPs}">
-                    <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold" />
-                </Border>
-                <Border Background="#263238" CornerRadius="4" Margin="0,0,0,4">
-                    <StackPanel>
-                        <Button HorizontalAlignment="Right" Content="複製"
-                                Style="{StaticResource MaterialDesignFlatButton}"
-                                Foreground="#78909C" FontSize="11" Height="26" Padding="8,0"
-                                Click="CopyStep4b_Click" />
-                        <TextBox x:Name="Step4bBox"
-                                 IsReadOnly="True" Background="Transparent" BorderThickness="0"
-                                 Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
-                                 TextWrapping="Wrap" Padding="12,4,12,12"
-                                 Text="wsl --shutdown" />
-                    </StackPanel>
-                </Border>
-                <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,24">
-                    之後重新開啟 Ubuntu，Docker 將自動啟動
-                </TextBlock>
-
-                <!-- ── 步驟 5 ── -->
-                <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 5：驗證安裝</TextBlock>
-                <Border Style="{StaticResource TerminalChipWsl}">
-                    <TextBlock Text="🐧  WSL Ubuntu 終端" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold" />
-                </Border>
-                <TextBlock TextWrapping="Wrap" Margin="0,0,0,6" FontSize="12">
-                    確認 Docker 已正常安裝：
-                </TextBlock>
-                <Border Background="#263238" CornerRadius="4" Margin="0,0,0,16">
-                    <StackPanel>
-                        <Button HorizontalAlignment="Right" Content="複製"
-                                Style="{StaticResource MaterialDesignFlatButton}"
-                                Foreground="#78909C" FontSize="11" Height="26" Padding="8,0"
-                                Click="CopyStep5_Click" />
-                        <TextBox x:Name="Step5Box"
-                                 IsReadOnly="True" Background="Transparent" BorderThickness="0"
-                                 Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
-                                 TextWrapping="Wrap" Padding="12,4,12,12"
-                                 Text="docker version&#x0a;docker compose version" />
-                    </StackPanel>
-                </Border>
-
-                <TextBlock TextWrapping="Wrap" Foreground="Gray" FontSize="12" Margin="0,0,0,24">
-                    完成後，回到本工具「設定」→ 選擇「WSL2 原生 Docker」→ 輸入發行版名稱（預設 Ubuntu）→ 點擊「測試連線」。
-                </TextBlock>
-
-                <!-- ── 常見問題 ── -->
-                <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,10">常見問題</TextBlock>
-
-                <!-- Q1: 0x80070569 -->
-                <Border Background="#37474F" CornerRadius="4" Padding="12,10" Margin="0,0,0,8">
-                    <StackPanel>
-                        <TextBlock Foreground="#EF9A9A" FontWeight="Bold" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4">
-                            ❌  錯誤：Wsl/Service/CreateInstance/CreateVm/HCS/0x80070569
-                        </TextBlock>
-                        <TextBlock Foreground="#ECEFF1" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8">
-                            原因：目前帳號缺少 Hyper-V VM 建立權限。用系統管理員 PowerShell 執行：
-                        </TextBlock>
-                        <Border Style="{StaticResource TerminalChipPs}">
-                            <TextBlock Text="📋  PowerShell（系統管理員）" Foreground="White" FontSize="11" FontWeight="SemiBold" />
+                        <Border Style="{StaticResource InfoBox}">
+                            <TextBlock Foreground="#C5CAE9" TextWrapping="Wrap" FontSize="12">
+                                💡 最簡單的方式。WSL2 + Ubuntu + Docker 全部安裝在 C 槽，適合大多數使用者。
+                            </TextBlock>
                         </Border>
-                        <Border Background="#263238" CornerRadius="4" Margin="0,4,0,8">
+
+                        <!-- 步驟 1 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 1：安裝 WSL2 + Ubuntu</TextBlock>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell（系統管理員）" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <TextBlock TextWrapping="Wrap" FontSize="12" Margin="0,0,0,6">以系統管理員開啟 PowerShell，執行後重新啟動 Windows：</TextBlock>
+                        <Border Style="{StaticResource CodeBlock}">
                             <StackPanel>
-                                <Button HorizontalAlignment="Right" Content="複製"
-                                        Style="{StaticResource MaterialDesignFlatButton}"
-                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0"
-                                        Click="CopyFix1_Click" />
-                                <TextBox x:Name="Fix1Box"
-                                         IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
                                          Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
-                                         TextWrapping="Wrap" Padding="12,4,12,12"
-                                         Text="net localgroup &quot;Hyper-V Administrators&quot; $env:USERNAME /add" />
+                                         TextWrapping="Wrap" Padding="12,4,12,12" Text="wsl --install"/>
                             </StackPanel>
                         </Border>
-                        <TextBlock Foreground="#B0BEC5" FontSize="11" TextWrapping="Wrap">
-                            執行後登出再登入 Windows（非重開機），即可解決。若是公司網域機器，需請 IT 人員協助加入群組。
+                        <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,8">預設安裝 Ubuntu；指定版本：wsl --install -d Ubuntu-24.04</TextBlock>
+
+                        <Border Background="#263238" CornerRadius="4" Padding="12,10" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Foreground="#FFD54F" FontWeight="Bold" FontSize="12" Margin="0,0,0,4">重新啟動後，如何開啟 Ubuntu 終端？</TextBlock>
+                                <TextBlock Foreground="#ECEFF1" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,2">方法 A：開始功能表 → 搜尋「Ubuntu」→ 點擊開啟</TextBlock>
+                                <TextBlock Foreground="#ECEFF1" FontSize="12" Margin="0,0,0,4">方法 B：任意終端輸入 wsl</TextBlock>
+                                <TextBlock Foreground="#B0BEC5" FontSize="11" TextWrapping="Wrap">⚠️  步驟 2 以後的 Linux 指令，請在 Ubuntu 終端執行，不是 PowerShell！</TextBlock>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 步驟 2 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 2：安裝 Docker Engine</TextBlock>
+                        <Border Style="{StaticResource ChipWsl}">
+                            <TextBlock Text="🐧  WSL Ubuntu 終端（不是 PowerShell）" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="curl -fsSL https://get.docker.com | sh&#x0a;sudo usermod -aG docker $USER"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,16">完成後關閉 Ubuntu 視窗並重新開啟（讓 docker 群組設定生效）</TextBlock>
+
+                        <!-- 步驟 3（22.04 限定）-->
+                        <Border Style="{StaticResource WarnBox}">
+                            <TextBlock Foreground="#E1BEE7" TextWrapping="Wrap" FontSize="12">ℹ️  以下步驟僅 Ubuntu 22.04 需要，Ubuntu 24.04 請直接跳到步驟 4</TextBlock>
+                        </Border>
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 3：修正 iptables（Ubuntu 22.04 限定）</TextBlock>
+                        <Border Style="{StaticResource ChipWsl}">
+                            <TextBlock Text="🐧  WSL Ubuntu 終端" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="sudo update-alternatives --set iptables /usr/sbin/iptables-legacy"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 步驟 4 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 4：設定 Docker 自動啟動（可選）</TextBlock>
+                        <TextBlock FontSize="12" Margin="0,0,0,6">① 在 Ubuntu 終端寫入設定：</TextBlock>
+                        <Border Style="{StaticResource ChipWsl}">
+                            <TextBlock Text="🐧  WSL Ubuntu 終端" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="printf '[boot]\ncommand = service docker start\n' | sudo tee /etc/wsl.conf"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock FontSize="12" Margin="0,8,0,6">② 關閉 Ubuntu，PowerShell 執行：</TextBlock>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12" Text="wsl --shutdown"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 步驟 5 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 5：驗證安裝</TextBlock>
+                        <Border Style="{StaticResource ChipWsl}">
+                            <TextBlock Text="🐧  WSL Ubuntu 終端" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="docker version&#x0a;docker compose version"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,20">
+                            完成後，回到本工具「設定」→「WSL2 原生 Docker」→ 輸入發行版名稱（預設 Ubuntu）→「測試連線」。
                         </TextBlock>
+
                     </StackPanel>
-                </Border>
+                </ScrollViewer>
+            </TabItem>
 
-                <!-- Q2: sudo 無法使用 -->
-                <Border Background="#37474F" CornerRadius="4" Padding="12,10" Margin="0,0,0,8">
-                    <StackPanel>
-                        <TextBlock Foreground="#EF9A9A" FontWeight="Bold" FontSize="12" Margin="0,0,0,4">
-                            ❌  錯誤：此電腦上已停用 Sudo / 'sh' 無法辨識
+            <!-- ══════════════ 方法二：直接安裝至 D 槽 ══════════════ -->
+            <TabItem Header="方法二：直接安裝至 D 槽">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="4,12,4,0">
+
+                        <Border Style="{StaticResource InfoBox}">
+                            <TextBlock Foreground="#C5CAE9" TextWrapping="Wrap" FontSize="12">
+                                💡 全新安裝，Ubuntu distro 直接存放在 D 槽，不先裝到 C 槽再搬移。需從 Ubuntu 官方下載 rootfs（約 350 MB）。
+                            </TextBlock>
+                        </Border>
+
+                        <!-- 步驟 1 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 1：啟用 WSL2 核心（不安裝 distro）</TextBlock>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell（系統管理員）" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12" Text="wsl --install --no-distribution"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,16">完成後重新啟動 Windows。WSL2 核心已啟用，但不安裝任何 Linux 發行版。</TextBlock>
+
+                        <!-- 步驟 2 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 2：建立目標資料夾</TextBlock>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="New-Item -ItemType Directory -Force -Path D:\WSL\Ubuntu"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,16">D 槽需為 NTFS 格式。資料夾名稱可自訂。</TextBlock>
+
+                        <!-- 步驟 3 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 3：下載 Ubuntu 24.04 rootfs</TextBlock>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6">從 Ubuntu 官方下載 WSL rootfs 壓縮檔（約 350 MB，視網速需數分鐘）：</TextBlock>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="Invoke-WebRequest -Uri &quot;https://cloud-images.ubuntu.com/wsl/releases/24.04/current/ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz&quot; -OutFile &quot;D:\WSL\ubuntu-24.04.tar.gz&quot; -UseBasicParsing"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,16">若連結失效，請前往 cloud-images.ubuntu.com/wsl 取得最新下載網址。</TextBlock>
+
+                        <!-- 步驟 4 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 4：匯入至 D 槽</TextBlock>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="wsl --import Ubuntu D:\WSL\Ubuntu D:\WSL\ubuntu-24.04.tar.gz --version 2"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,16">匯入完成後可刪除 ubuntu-24.04.tar.gz 以節省空間。</TextBlock>
+
+                        <!-- 步驟 5 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 5：建立使用者帳號</TextBlock>
+                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6">匯入後預設以 root 進入，需手動建立一般使用者。先進入 WSL：</TextBlock>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12" Text="wsl -d Ubuntu"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,8,0,6">以 root 身份執行以下指令（將 myusername 換成你的帳號）：</TextBlock>
+                        <Border Style="{StaticResource ChipWsl}">
+                            <TextBlock Text="🐧  WSL Ubuntu 終端（root）" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="useradd -m -s /bin/bash myusername&#x0a;passwd myusername&#x0a;usermod -aG sudo myusername&#x0a;printf '[user]\ndefault=myusername\n' | tee -a /etc/wsl.conf&#x0a;exit"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,6">所有 myusername 需替換為你的帳號。</TextBlock>
+                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6">回到 PowerShell，重啟 WSL 讓設定生效：</TextBlock>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12" Text="wsl --shutdown"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 步驟 6 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 6：安裝 Docker Engine</TextBlock>
+                        <Border Style="{StaticResource ChipWsl}">
+                            <TextBlock Text="🐧  WSL Ubuntu 終端" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="curl -fsSL https://get.docker.com | sh&#x0a;sudo usermod -aG docker $USER"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,16">完成後關閉 Ubuntu 並重新開啟。</TextBlock>
+
+                        <!-- 步驟 7（22.04 限定）-->
+                        <Border Style="{StaticResource WarnBox}">
+                            <TextBlock Foreground="#E1BEE7" TextWrapping="Wrap" FontSize="12">ℹ️  以下步驟僅 Ubuntu 22.04 需要，24.04 請直接跳到步驟 8</TextBlock>
+                        </Border>
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 7：修正 iptables（Ubuntu 22.04 限定）</TextBlock>
+                        <Border Style="{StaticResource ChipWsl}">
+                            <TextBlock Text="🐧  WSL Ubuntu 終端" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="sudo update-alternatives --set iptables /usr/sbin/iptables-legacy"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 步驟 8 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 8：設定 Docker 自動啟動</TextBlock>
+                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6">步驟 5 已建立 /etc/wsl.conf，需追加 [boot] 段落（-a 為 append）：</TextBlock>
+                        <Border Style="{StaticResource ChipWsl}">
+                            <TextBlock Text="🐧  WSL Ubuntu 終端" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="printf '[boot]\ncommand = service docker start\n' | sudo tee -a /etc/wsl.conf"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock FontSize="12" Margin="0,8,0,6">關閉 Ubuntu，PowerShell 執行：</TextBlock>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12" Text="wsl --shutdown"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 步驟 9 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 9：驗證安裝</TextBlock>
+                        <Border Style="{StaticResource ChipWsl}">
+                            <TextBlock Text="🐧  WSL Ubuntu 終端" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="docker version&#x0a;docker compose version"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,20">
+                            完成後，回到本工具「設定」→「WSL2 原生 Docker」→ 輸入 Ubuntu →「測試連線」。
                         </TextBlock>
-                        <TextBlock Foreground="#ECEFF1" FontSize="12" TextWrapping="Wrap">
-                            原因：步驟 2 的指令被貼到 Windows PowerShell 執行。這些指令必須在 WSL Ubuntu 終端機中執行。
-                            請開啟「開始功能表」→ 搜尋「Ubuntu」→ 開啟後再執行。
-                        </TextBlock>
+
                     </StackPanel>
-                </Border>
+                </ScrollViewer>
+            </TabItem>
 
-            </StackPanel>
-        </ScrollViewer>
+            <!-- ══════════════ 方法三：C 槽移植至 D 槽 ══════════════ -->
+            <TabItem Header="方法三：C 槽移植至 D 槽">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="4,12,4,0">
 
-        <Button Grid.Row="2" Content="關閉" HorizontalAlignment="Right" Margin="0,16,0,0"
+                        <Border Style="{StaticResource InfoBox}">
+                            <TextBlock Foreground="#C5CAE9" TextWrapping="Wrap" FontSize="12">
+                                💡 適合已完成方法一、想把 WSL2 distro 從 C 槽搬到 D 槽的使用者。Docker 及所有設定一併保留，無需重新安裝。
+                            </TextBlock>
+                        </Border>
+
+                        <!-- 步驟 1 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 1：確認現有 distro 名稱</TextBlock>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12" Text="wsl --list --verbose"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,16">記下 distro 名稱（通常是 Ubuntu），以下指令均預設使用 Ubuntu。</TextBlock>
+
+                        <!-- 步驟 2 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 2：關閉 WSL 並匯出 distro</TextBlock>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6">先關閉所有 WSL 執行個體，再匯出為 .tar 備份（約需數分鐘）：</TextBlock>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="wsl --shutdown&#x0a;New-Item -ItemType Directory -Force -Path D:\WSL&#x0a;wsl --export Ubuntu D:\WSL\Ubuntu.tar"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,16">.tar 大小約等於 distro 目前佔用空間，確認檔案存在後再進行下一步。</TextBlock>
+
+                        <!-- 步驟 3 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 3：移除 C 槽的原有 distro</TextBlock>
+                        <Border Style="{StaticResource DangerBox}">
+                            <TextBlock Foreground="#FFCDD2" TextWrapping="Wrap" FontSize="12">
+                                ⚠️  執行前請確認步驟 2 的 .tar 已成功建立！unregister 後 C 槽的 distro 資料將被永久刪除。
+                            </TextBlock>
+                        </Border>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12" Text="wsl --unregister Ubuntu"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,16">此操作只移除 distro 虛擬磁碟（.vhdx），不影響 Ubuntu 應用程式本身。</TextBlock>
+
+                        <!-- 步驟 4 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 4：重新匯入至 D 槽</TextBlock>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="wsl --import Ubuntu D:\WSL\Ubuntu D:\WSL\Ubuntu.tar --version 2"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,16">D:\WSL\Ubuntu 為 .vhdx 存放位置，可自訂路徑。</TextBlock>
+
+                        <!-- 步驟 5 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 5：修正預設使用者</TextBlock>
+                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6">匯入後可能以 root 登入，需修正預設使用者（將 your_username 替換為你的帳號）：</TextBlock>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="Ubuntu config --default-user your_username"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="11" Margin="0,0,0,16">若指令無效，可在 WSL 終端編輯 /etc/wsl.conf 的 [user] default= 欄位。</TextBlock>
+
+                        <!-- 步驟 6 -->
+                        <TextBlock FontWeight="Bold" FontSize="14" Margin="0,0,0,6">步驟 6：驗證（Docker 已保留）</TextBlock>
+                        <Border Style="{StaticResource ChipWsl}">
+                            <TextBlock Text="🐧  WSL Ubuntu 終端" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12"
+                                         Text="docker version&#x0a;docker compose version"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Foreground="Gray" FontSize="11" Margin="0,4,0,12">Docker 及所有設定已從原有 distro 保留，無需重新安裝。</TextBlock>
+
+                        <!-- 步驟 7（選用）-->
+                        <Border Style="{StaticResource InfoBox}">
+                            <TextBlock Foreground="#C5CAE9" TextWrapping="Wrap" FontSize="12">
+                                💡 選用：確認正常後可刪除備份 .tar 以節省磁碟空間（通常數 GB）
+                            </TextBlock>
+                        </Border>
+                        <Border Style="{StaticResource ChipPs}">
+                            <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Style="{StaticResource CodeBlock}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                         Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                         TextWrapping="Wrap" Padding="12,4,12,12" Text="Remove-Item D:\WSL\Ubuntu.tar"/>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,20">
+                            完成後，回到本工具「設定」→「WSL2 原生 Docker」→ 輸入 Ubuntu →「測試連線」。
+                        </TextBlock>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ══════════════ 常見問題 ══════════════ -->
+            <TabItem Header="常見問題">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="4,12,4,0">
+
+                        <Border Style="{StaticResource FaqBox}">
+                            <StackPanel>
+                                <TextBlock Foreground="#EF9A9A" FontWeight="Bold" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4">
+                                    ❌  錯誤：Wsl/Service/CreateInstance/CreateVm/HCS/0x80070569
+                                </TextBlock>
+                                <TextBlock Foreground="#ECEFF1" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8">
+                                    原因：目前帳號缺少 Hyper-V VM 建立權限。用系統管理員 PowerShell 執行：
+                                </TextBlock>
+                                <Border Style="{StaticResource ChipPs}">
+                                    <TextBlock Text="📋  PowerShell（系統管理員）" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                                </Border>
+                                <Border Background="#263238" CornerRadius="4" Margin="0,4,0,8">
+                                    <StackPanel>
+                                        <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                                Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                        <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                                 Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                                 TextWrapping="Wrap" Padding="12,4,12,12"
+                                                 Text="net localgroup &quot;Hyper-V Administrators&quot; $env:USERNAME /add"/>
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Foreground="#B0BEC5" FontSize="11" TextWrapping="Wrap">
+                                    執行後登出再登入 Windows（非重開機）即可解決。公司網域機器需請 IT 協助加入群組。
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource FaqBox}">
+                            <StackPanel>
+                                <TextBlock Foreground="#EF9A9A" FontWeight="Bold" FontSize="12" Margin="0,0,0,4">
+                                    ❌  錯誤：此電腦上已停用 Sudo / 'sh' 無法辨識
+                                </TextBlock>
+                                <TextBlock Foreground="#ECEFF1" FontSize="12" TextWrapping="Wrap">
+                                    原因：Linux 指令被貼到 Windows PowerShell 執行。這些指令必須在 WSL Ubuntu 終端機中執行。
+                                    請開啟「開始功能表」→ 搜尋「Ubuntu」→ 開啟後再執行。
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource FaqBox}">
+                            <StackPanel>
+                                <TextBlock Foreground="#EF9A9A" FontWeight="Bold" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4">
+                                    ❌  建置（rebuild image）時卡住、失敗或記憶體不足
+                                </TextBlock>
+                                <TextBlock Foreground="#ECEFF1" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8">
+                                    WSL2 預設最多使用主機 50% 記憶體，建置大型 image 時容易 OOM。建立 .wslconfig 調整資源上限：
+                                </TextBlock>
+                                <Border Style="{StaticResource ChipPs}">
+                                    <TextBlock Text="📋  PowerShell" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                                </Border>
+                                <Border Background="#263238" CornerRadius="4" Margin="0,4,0,8">
+                                    <StackPanel>
+                                        <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                                Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                        <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                                 Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                                 TextWrapping="Wrap" Padding="12,4,12,12"
+                                                 Text="notepad &quot;$env:USERPROFILE\.wslconfig&quot;"/>
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Foreground="#ECEFF1" FontSize="12" Margin="0,0,0,4">在檔案中加入：</TextBlock>
+                                <Border Background="#263238" CornerRadius="4" Margin="0,0,0,8">
+                                    <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                             Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                             TextWrapping="Wrap" Padding="12,8"
+                                             Text="[wsl2]&#x0a;memory=8GB&#x0a;processors=4"/>
+                                </Border>
+                                <TextBlock Foreground="#B0BEC5" FontSize="11" TextWrapping="Wrap">
+                                    設定後執行 wsl --shutdown 重啟生效。memory 建議設為主機實體記憶體的 50~75%。
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource FaqBox}">
+                            <StackPanel>
+                                <TextBlock Foreground="#EF9A9A" FontWeight="Bold" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4">
+                                    ❌  Cannot connect to the Docker daemon / error during connect
+                                </TextBlock>
+                                <TextBlock Foreground="#ECEFF1" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8">
+                                    Docker daemon 未啟動。在 Ubuntu 終端手動啟動：
+                                </TextBlock>
+                                <Border Style="{StaticResource ChipWsl}">
+                                    <TextBlock Text="🐧  WSL Ubuntu 終端" Foreground="#A5D6A7" FontSize="11" FontWeight="SemiBold"/>
+                                </Border>
+                                <Border Background="#263238" CornerRadius="4" Margin="0,4,0,8">
+                                    <StackPanel>
+                                        <Button HorizontalAlignment="Right" Content="複製" Style="{StaticResource MaterialDesignFlatButton}"
+                                                Foreground="#78909C" FontSize="11" Height="26" Padding="8,0" Click="CopyBox_Click"/>
+                                        <TextBox IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                                 Foreground="#A5D6A7" FontFamily="Consolas" FontSize="13"
+                                                 TextWrapping="Wrap" Padding="12,4,12,12" Text="sudo service docker start"/>
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Foreground="#B0BEC5" FontSize="11" TextWrapping="Wrap">
+                                    若要永久自動啟動，請完成對應方法的「設定 Docker 自動啟動」步驟。
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+        </TabControl>
+
+        <Button Grid.Row="2" Content="關閉" HorizontalAlignment="Right" Margin="0,12,0,0"
                 Style="{StaticResource MaterialDesignRaisedButton}"
-                Click="Close_Click" />
+                Click="Close_Click"/>
     </Grid>
 </Window>

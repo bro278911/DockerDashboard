@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -41,8 +42,31 @@ public class ContainerMonitorService : IDisposable
         _cts?.Cancel();
         _eventsProcess?.Dispose();
         _eventsProcess = null;
-        try { _monitorTask?.Wait(TimeSpan.FromSeconds(3)); } catch (AggregateException) { }
-        try { _eventsTask?.Wait(TimeSpan.FromSeconds(2)); } catch (AggregateException) { }
+        _timer?.Dispose();
+        _timer = null;
+        _monitorTask = null;
+        _eventsTask = null;
+        _cts?.Dispose();
+        _cts = null;
+    }
+
+    public async Task StopAsync()
+    {
+        _cts?.Cancel();
+        _eventsProcess?.Dispose();
+        _eventsProcess = null;
+
+        var tasks = new[] { _monitorTask, _eventsTask }
+            .Where(t => t is { IsCompleted: false })
+            .Select(t => t!)
+            .ToArray();
+
+        if (tasks.Length > 0)
+        {
+            try { await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(5)); }
+            catch { }
+        }
+
         _monitorTask = null;
         _eventsTask = null;
         _timer?.Dispose();
@@ -79,14 +103,13 @@ public class ContainerMonitorService : IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
+            ProcessStream? stream = null;
             try
             {
-                var stream = _dockerCli.StartDockerEvents();
+                stream = _dockerCli.StartDockerEvents();
                 if (ct.IsCancellationRequested)
-                {
-                    stream.Dispose();
                     break;
-                }
+
                 _eventsProcess = stream;
                 var reader = stream.StandardOutput;
 
@@ -109,7 +132,18 @@ public class ContainerMonitorService : IDisposable
             catch (Exception ex)
             {
                 Debug.WriteLine($"[ContainerMonitor] EventsLoop error: {ex.Message}");
-                try { await Task.Delay(3000, ct); } catch { break; }
+            }
+            finally
+            {
+                stream?.Dispose();
+                if (ReferenceEquals(_eventsProcess, stream))
+                    _eventsProcess = null;
+            }
+
+            if (!ct.IsCancellationRequested)
+            {
+                try { await Task.Delay(3000, ct); }
+                catch (OperationCanceledException) { break; }
             }
         }
     }

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using DockerDashboard.Models;
 
@@ -11,6 +12,9 @@ namespace DockerDashboard.Services;
 
 public class ComposeFileScanner
 {
+    public DockerMode DockerMode { get; set; } = DockerMode.DockerDesktop;
+    public string WslDistroName { get; set; } = "Ubuntu";
+
     private static readonly string[] MainComposeFileNames =
     [
         "docker-compose.yml",
@@ -19,70 +23,104 @@ public class ComposeFileScanner
         "compose.yaml"
     ];
 
-    public List<ComposeFile> ScanFolder(string folderPath)
+    public async Task<List<ComposeFile>> ScanFolderAsync(string folderPath)
     {
         var results = new List<ComposeFile>();
 
         if (!Directory.Exists(folderPath))
             return results;
 
-        // 掃描所有子目錄中的主 compose 檔案
         foreach (var file in Directory.EnumerateFiles(folderPath, "*", SearchOption.AllDirectories))
         {
             var fileName = Path.GetFileName(file);
-            if (MainComposeFileNames.Contains(fileName, StringComparer.OrdinalIgnoreCase))
-            {
-                // 跳過 obj/ bin/ node_modules/ 等目錄
-                var relativePath = Path.GetRelativePath(folderPath, file);
-                if (ShouldSkipPath(relativePath))
-                    continue;
+            if (!MainComposeFileNames.Contains(fileName, StringComparer.OrdinalIgnoreCase))
+                continue;
 
-                var composeFile = ParseWithDockerCli(file);
-                composeFile ??= ParseManually(file);
+            var relativePath = Path.GetRelativePath(folderPath, file);
+            if (ShouldSkipPath(relativePath))
+                continue;
 
-                if (composeFile != null)
-                    results.Add(composeFile);
-            }
+            var composeFile = await ParseWithDockerCliAsync(file) ?? ParseManually(file);
+            if (composeFile != null)
+                results.Add(composeFile);
         }
 
         return results;
     }
 
     // docker compose config --format json 自動解析變數、anchor、merge key、多檔合併
-    private ComposeFile? ParseWithDockerCli(string filePath)
+    private async Task<ComposeFile?> ParseWithDockerCliAsync(string filePath)
     {
         try
         {
             var directory = Path.GetDirectoryName(filePath)!;
 
-            var psi = new ProcessStartInfo
+            ProcessStartInfo psi;
+            if (DockerMode == DockerMode.Wsl2)
             {
-                FileName = "docker",
-                WorkingDirectory = directory,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-            psi.ArgumentList.Add("compose");
-            foreach (var arg in GetComposeFileArgs(directory))
-                psi.ArgumentList.Add(arg);
-            psi.ArgumentList.Add("config");
-            psi.ArgumentList.Add("--format");
-            psi.ArgumentList.Add("json");
+                psi = new ProcessStartInfo
+                {
+                    FileName = "wsl",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                psi.ArgumentList.Add("-d");
+                psi.ArgumentList.Add(WslDistroName);
+                psi.ArgumentList.Add("--cd");
+                psi.ArgumentList.Add(DockerCliService.ConvertToWslPath(directory));
+                psi.ArgumentList.Add("--");
+                psi.ArgumentList.Add("docker");
+                psi.ArgumentList.Add("compose");
+                foreach (var arg in ComposeFileHelper.GetComposeFileArgs(directory))
+                    psi.ArgumentList.Add(arg);
+                psi.ArgumentList.Add("config");
+                psi.ArgumentList.Add("--format");
+                psi.ArgumentList.Add("json");
+            }
+            else
+            {
+                psi = new ProcessStartInfo
+                {
+                    FileName = "docker",
+                    WorkingDirectory = directory,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                psi.ArgumentList.Add("compose");
+                foreach (var arg in ComposeFileHelper.GetComposeFileArgs(directory))
+                    psi.ArgumentList.Add(arg);
+                psi.ArgumentList.Add("config");
+                psi.ArgumentList.Add("--format");
+                psi.ArgumentList.Add("json");
+            }
 
             using var process = new Process { StartInfo = psi };
             process.Start();
 
-            var stderrTask = Task.Run(() => process.StandardError.ReadToEnd());
-            var json = process.StandardOutput.ReadToEnd();
-            process.WaitForExit(15000);
-            stderrTask.Wait(1000);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
-            if (process.ExitCode != 0 || string.IsNullOrWhiteSpace(json))
+            try
+            {
+                var stdoutTask = process.StandardOutput.ReadToEndAsync(cts.Token);
+                var stderrTask = process.StandardError.ReadToEndAsync(cts.Token);
+                var json = await stdoutTask;
+                await stderrTask;
+                await process.WaitForExitAsync(cts.Token);
+
+                if (process.ExitCode != 0 || string.IsNullOrWhiteSpace(json))
+                    return null;
+
+                return ParseJsonConfig(json, filePath, directory);
+            }
+            catch (OperationCanceledException)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
                 return null;
-
-            return ParseJsonConfig(json, filePath, directory);
+            }
         }
         catch
         {
@@ -120,7 +158,6 @@ public class ComposeFileScanner
             if (service.Value.TryGetProperty("container_name", out var cnEl))
                 dockerService.ContainerName = cnEl.GetString() ?? string.Empty;
 
-            // 解析 ports（docker compose config 的格式）
             if (service.Value.TryGetProperty("ports", out var portsEl) && portsEl.ValueKind == JsonValueKind.Array)
             {
                 var portStrings = new List<string>();
@@ -212,49 +249,17 @@ public class ComposeFileScanner
         }
     }
 
-    private static List<string> GetComposeFileArgs(string directory)
-    {
-        var fileArgs = new List<string>();
-
-        var mainFiles = new[] { "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml" };
-        var mainFile = mainFiles.FirstOrDefault(f => File.Exists(Path.Combine(directory, f)));
-        if (mainFile == null) return fileArgs;
-
-        fileArgs.Add("-f");
-        fileArgs.Add(mainFile);
-
-        var overrideFiles = new[] { "docker-compose.override.yml", "docker-compose.override.yaml" };
-        var overrideFile = overrideFiles.FirstOrDefault(f => File.Exists(Path.Combine(directory, f)));
-        if (overrideFile != null)
-        {
-            fileArgs.Add("-f");
-            fileArgs.Add(overrideFile);
-        }
-
-        var buildFiles = new[] { "docker-compose.build.yml", "docker-compose.build.yaml" };
-        var buildFile = buildFiles.FirstOrDefault(f => File.Exists(Path.Combine(directory, f)));
-        if (buildFile != null)
-        {
-            fileArgs.Add("-f");
-            fileArgs.Add(buildFile);
-        }
-
-        return fileArgs;
-    }
-
     // 清理 compose 變數語法，例如 ${DOCKER_REGISTRY:-}nginx → nginx
     private static string CleanImageName(string raw)
     {
         if (string.IsNullOrEmpty(raw)) return raw;
 
-        // 處理 ${VAR:-default}value 或 ${VAR:-}value 格式
         while (raw.Contains("${"))
         {
             var start = raw.IndexOf("${", StringComparison.Ordinal);
             var end = raw.IndexOf("}", start, StringComparison.Ordinal);
             if (end < 0) break;
 
-            // 取得預設值部分
             var varContent = raw.Substring(start + 2, end - start - 2);
             var defaultValue = "";
             var dashIdx = varContent.IndexOf(":-", StringComparison.Ordinal);
