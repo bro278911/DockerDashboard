@@ -18,6 +18,7 @@ public class DockerCliService : IDockerCliService
     public bool UseComposeV2 { get; set; } = true;
     public DockerMode DockerMode { get; set; } = DockerMode.DockerDesktop;
     public string WslDistroName { get; set; } = "Ubuntu";
+    public int BuildKitParallelism { get; set; } = 0;
 
     private string ComposeCommand => UseComposeV2 ? "docker" : "docker-compose";
     private string[] ComposeArgs => UseComposeV2 ? ["compose"] : [];
@@ -413,15 +414,18 @@ public class DockerCliService : IDockerCliService
         string command, IEnumerable<string> args, string? workingDirectory,
         Action<string> onOutput, CancellationToken ct, bool withBuildEnv = false)
     {
-        IReadOnlyDictionary<string, string>? wslEnvOverrides = withBuildEnv && IsWsl2
-            ? new Dictionary<string, string> { ["BUILDKIT_MAX_PARALLELISM"] = "1" }
-            : null;
+        IReadOnlyDictionary<string, string>? wslEnvOverrides = null;
+        if (withBuildEnv && IsWsl2 && BuildKitParallelism > 0)
+            wslEnvOverrides = new Dictionary<string, string>
+            {
+                ["BUILDKIT_MAX_PARALLELISM"] = BuildKitParallelism.ToString()
+            };
 
         var psi = CreatePsi(command, args, workingDirectory, wslEnvOverrides);
         psi.Environment["DOCKER_BUILDKIT"] = "1";
         psi.Environment["COMPOSE_DOCKER_CLI_BUILD"] = "1";
-        if (withBuildEnv && !IsWsl2)
-            psi.Environment["BUILDKIT_MAX_PARALLELISM"] = "1";
+        if (withBuildEnv && !IsWsl2 && BuildKitParallelism > 0)
+            psi.Environment["BUILDKIT_MAX_PARALLELISM"] = BuildKitParallelism.ToString();
 
         using var process = new Process { StartInfo = psi };
         var output = new StringBuilder();

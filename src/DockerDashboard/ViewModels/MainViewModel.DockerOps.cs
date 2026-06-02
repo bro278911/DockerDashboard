@@ -108,6 +108,70 @@ public partial class MainViewModel
     }
 
     [RelayCommand]
+    private async Task AllUpIncrementalBuildAsync()
+    {
+        if (Projects.Count == 0)
+        {
+            StatusMessage = "⚠ 請先匯入專案資料夾";
+            return;
+        }
+
+        IsOperating = true;
+        StatusMessage = "正在並行增量重建所有 image（使用 cache，速度快）...";
+        LogLines.Clear();
+        AppendLog($"[{DateTime.Now:HH:mm:ss}] ▶ 全部增量重建（使用 cache，只重建有變動的層）");
+
+        var composeFiles = Projects.SelectMany(p => p.ComposeFiles).ToList();
+        var errors = new ConcurrentBag<string>();
+        using var semaphore = new System.Threading.SemaphoreSlim(2);
+
+        var tasks = composeFiles.Select(async compose =>
+        {
+            await semaphore.WaitAsync();
+            try
+            {
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] 增量重建+啟動 {compose.FileName} ...");
+                var (exitCode, _) = await _dockerCli.ComposeRebuildRestartWithLogAsync(
+                    compose.DirectoryPath, AppendLog);
+                if (exitCode != 0)
+                    errors.Add(compose.FileName);
+                else
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 增量重建+啟動完成");
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"{compose.FileName}: {ex.Message}");
+                AppendLog($"[例外] {ex.Message}");
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        try
+        {
+            await Task.WhenAll(tasks);
+        }
+        finally
+        {
+            await _monitor.ForceRefreshAsync();
+            IsOperating = false;
+        }
+
+        if (!errors.IsEmpty)
+        {
+            StatusMessage = $"⚠ {errors.Count} 個服務增量重建失敗";
+            foreach (var err in errors)
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {err}");
+        }
+        else
+        {
+            StatusMessage = "✅ 所有服務已增量重建並啟動";
+        }
+    }
+
+    [RelayCommand]
     private async Task AllUpBuildAsync()
     {
         if (Projects.Count == 0)
@@ -117,34 +181,41 @@ public partial class MainViewModel
         }
 
         IsOperating = true;
-        StatusMessage = "正在並行強制重建所有 image 並啟動（不使用 cache）...";
+        StatusMessage = "正在強制重建所有 image 並啟動（不使用 cache）...";
         LogLines.Clear();
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ▶ 全部強制重建（--no-cache，耗時較長）");
 
         var composeFiles = Projects.SelectMany(p => p.ComposeFiles).ToList();
         var errors = new ConcurrentBag<string>();
+        using var semaphore = new System.Threading.SemaphoreSlim(2);
 
-        // 循序執行：避免多專案同時 build 佔滿 BuildKit worker 資源
+        var tasks = composeFiles.Select(async compose =>
+        {
+            await semaphore.WaitAsync();
+            try
+            {
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] 強制重建+啟動 {compose.FileName} ...");
+                var (exitCode, _) = await _dockerCli.ComposeForceRebuildWithLogAsync(
+                    compose.DirectoryPath, AppendLog);
+                if (exitCode != 0)
+                    errors.Add(compose.FileName);
+                else
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 強制重建+啟動完成");
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"{compose.FileName}: {ex.Message}");
+                AppendLog($"[例外] {ex.Message}");
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
         try
         {
-            foreach (var compose in composeFiles)
-            {
-                try
-                {
-                    AppendLog($"[{DateTime.Now:HH:mm:ss}] 強制重建+啟動 {compose.FileName} ...");
-                    var (exitCode, _) = await _dockerCli.ComposeForceRebuildWithLogAsync(
-                        compose.DirectoryPath, AppendLog);
-                    if (exitCode != 0)
-                        errors.Add(compose.FileName);
-                    else
-                        AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 強制重建+啟動完成");
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"{compose.FileName}: {ex.Message}");
-                    AppendLog($"[例外] {ex.Message}");
-                }
-            }
+            await Task.WhenAll(tasks);
         }
         finally
         {

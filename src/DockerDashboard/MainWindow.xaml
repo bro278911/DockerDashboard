@@ -53,13 +53,24 @@
                 </Button>
 
                 <Button Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{Binding AllUpIncrementalBuildCommand}"
+                        IsEnabled="{Binding CanRebuild}"
+                        Foreground="#2196F3"
+                        ToolTip="增量重建所有 image（使用 cache，只重建有變動的層，速度快）">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon Kind="Refresh" VerticalAlignment="Center" />
+                        <TextBlock Text="增量重建" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <Button Style="{StaticResource MaterialDesignFlatButton}"
                         Command="{Binding AllUpBuildCommand}"
                         IsEnabled="{Binding CanAllUp}"
                         Foreground="#FF9800"
                         ToolTip="強制重建所有 image（--no-cache，砍掉舊 image 從頭建，耗時較長）">
                     <StackPanel Orientation="Horizontal">
                         <materialDesign:PackIcon Kind="Hammer" VerticalAlignment="Center" />
-                        <TextBlock Text="重建啟動" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        <TextBlock Text="完整重建" Margin="6,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
 

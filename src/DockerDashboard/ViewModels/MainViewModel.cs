@@ -47,6 +47,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAllUp))]
     [NotifyPropertyChangedFor(nameof(CanAllDown))]
+    [NotifyPropertyChangedFor(nameof(CanRebuild))]
     private bool _isOperating;
 
     [ObservableProperty]
@@ -57,12 +58,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAllUp))]
     [NotifyPropertyChangedFor(nameof(CanAllDown))]
+    [NotifyPropertyChangedFor(nameof(CanRebuild))]
     private int _totalCount;
 
     [ObservableProperty]
     private int _stoppedCount;
 
     public bool CanAllUp => !IsOperating && TotalCount > 0 && RunningCount < TotalCount;
+    public bool CanRebuild => !IsOperating && TotalCount > 0;
     public bool CanAllDown => !IsOperating && RunningCount > 0;
 
     [ObservableProperty]
@@ -231,6 +234,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _dockerCli.UseComposeV2 = settings.UseComposeV2;
         _dockerCli.DockerMode = settings.DockerMode;
         _dockerCli.WslDistroName = settings.WslDistroName;
+        _dockerCli.BuildKitParallelism = settings.BuildKitParallelism;
         _scanner.DockerMode = settings.DockerMode;
         _scanner.WslDistroName = settings.WslDistroName;
         DockerModeLabel = settings.DockerMode == DockerMode.Wsl2
