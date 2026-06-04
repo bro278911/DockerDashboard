@@ -22,6 +22,7 @@ public partial class App : System.Windows.Application
 
     private static void ConfigureServices(IServiceCollection services)
     {
+        services.AddSingleton<UpdateService>();
         services.AddSingleton<DockerCliService>();
         services.AddSingleton<IDockerCliService>(sp => sp.GetRequiredService<DockerCliService>());
         services.AddSingleton<IGitService, GitService>();

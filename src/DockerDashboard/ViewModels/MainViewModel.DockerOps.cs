@@ -657,7 +657,13 @@ public partial class MainViewModel
     private async Task OpenSettingsAsync()
     {
         var settings = await _settingsService.LoadAsync();
-        var settingsWindow = new Views.SettingsWindow(settings);
+        var settingsWindow = new Views.SettingsWindow(settings, _updateService, info =>
+        {
+            _pendingUpdate = info;
+            UpdateVersion = info.TargetFullRelease.Version.ToString();
+            HasUpdate = true;
+            ShowUpdateBalloonTip("發現新版本", $"版本 {UpdateVersion} 可更新，點擊工具列「有新版本」按鈕安裝。");
+        });
         settingsWindow.Owner = Application.Current.MainWindow;
 
         if (settingsWindow.ShowDialog() == true)

@@ -8,12 +8,15 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>Assets\pooh.ico</ApplicationIcon>
+    <Version>1.1.1</Version>
+    <StartupObject>DockerDashboard.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" />
     <PackageReference Include="MaterialDesignThemes" Version="5.*" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.*" />
+    <PackageReference Include="Velopack" Version="1.*" />
     <PackageReference Include="YamlDotNet" Version="16.*" />
   </ItemGroup>
 

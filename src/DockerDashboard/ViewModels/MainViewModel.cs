@@ -22,6 +22,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly SettingsService _settingsService;
     private readonly ContainerMonitorService _monitor;
     private readonly WatchRebuildService _watchService;
+    private readonly UpdateService _updateService;
     private Forms.NotifyIcon? _notifyIcon;
 
     public ObservableCollection<DockerProject> Projects { get; } = [];
@@ -83,7 +84,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ComposeFileScanner scanner,
         SettingsService settingsService,
         ContainerMonitorService monitor,
-        WatchRebuildService watchService)
+        WatchRebuildService watchService,
+        UpdateService updateService)
     {
         _dockerCli = dockerCli;
         _gitService = gitService;
@@ -91,6 +93,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _settingsService = settingsService;
         _monitor = monitor;
         _watchService = watchService;
+        _updateService = updateService;
 
         _monitor.ContainersUpdated += OnContainersUpdated;
         _monitor.ContainerCrashed += OnContainerCrashed;
@@ -148,10 +151,24 @@ public partial class MainViewModel : ObservableObject, IDisposable
         foreach (var folder in settings.RecentlyRemovedFolders)
             RecentlyRemovedFolders.Add(folder);
 
-        foreach (var folder in settings.ImportedFolders)
+        var loaded = await Task.WhenAll(
+            settings.ImportedFolders
+                .Where(System.IO.Directory.Exists)
+                .Select(async folder =>
+                {
+                    try { return await BuildProjectAsync(folder); }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[Init] 載入 {folder} 失敗: {ex.Message}");
+                        return null;
+                    }
+                }));
+
+        foreach (var project in loaded.OfType<DockerProject>())
         {
-            if (System.IO.Directory.Exists(folder))
-                await AddProjectFromFolderAsync(folder);
+            Projects.Add(project);
+            if (project.ComposeFiles.Count == 0)
+                StatusMessage = $"⚠ {project.Name} 中未偵測到服務（docker compose config 可能失敗）";
         }
 
         _monitor.Start(TimeSpan.FromSeconds(settings.PollIntervalSeconds));
@@ -161,6 +178,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         RestoreWatchStateFromSettings(settings);
 
         StatusMessage = "就緒";
+
+        // 背景靜默檢查更新，不阻塞啟動
+        if (settings.AutoCheckUpdate)
+            _ = CheckUpdateAsync();
     }
 
     private async Task<bool> TryConnectDockerAsync(DockerMode mode)
@@ -242,7 +263,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             : "Docker Desktop";
     }
 
-    internal async Task AddProjectFromFolderAsync(string folderPath)
+    private async Task<DockerProject> BuildProjectAsync(string folderPath)
     {
         var project = new DockerProject
         {
@@ -261,6 +282,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
             project.IsDirty = await _gitService.IsDirtyAsync(folderPath);
         }
 
+        return project;
+    }
+
+    internal async Task AddProjectFromFolderAsync(string folderPath)
+    {
+        var project = await BuildProjectAsync(folderPath);
         Projects.Add(project);
 
         if (project.ComposeFiles.Count == 0)
@@ -380,9 +407,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         LogLines.Add(message);
         if (LogLines.Count <= 5000) return;
-        // 移除最舊 500 條：500 次通知 vs 原本 4500 次重新 Add
-        for (var i = 0; i < 500; i++)
-            LogLines.RemoveAt(0);
+        // Skip(500) 後 Clear + re-add：O(n) 位移 vs 原本 500 次 RemoveAt(0) 各自 O(n) 位移
+        var kept = LogLines.Skip(500).ToArray();
+        LogLines.Clear();
+        foreach (var line in kept)
+            LogLines.Add(line);
     }
 
     public List<string> ParsePortLinks(string? ports)

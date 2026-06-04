@@ -161,11 +161,20 @@ public class DockerCliService : IDockerCliService
             using var process = new Process { StartInfo = psi };
             process.Start();
 
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
-            var stderrTask = process.StandardError.ReadToEndAsync(ct);
-            var stdout = await stdoutTask;
-            await stderrTask;
-            await process.WaitForExitAsync(ct);
+            string stdout;
+            try
+            {
+                var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
+                var stderrTask = process.StandardError.ReadToEndAsync(ct);
+                stdout = await stdoutTask;
+                await stderrTask;
+                await process.WaitForExitAsync(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                return containers;
+            }
 
             if (process.ExitCode != 0)
             {
