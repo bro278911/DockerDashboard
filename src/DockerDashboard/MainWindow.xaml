@@ -142,11 +142,24 @@
                     </StackPanel>
                 </Button>
 
-                <!-- 操作中指示器 -->
+                <!-- 操作中指示器 + 取消按鈕 -->
                 <ProgressBar Style="{StaticResource MaterialDesignCircularProgressBar}"
                              IsIndeterminate="True"
                              Visibility="{Binding IsOperating, Converter={StaticResource BoolToVisibilityConverter}}"
                              Width="20" Height="20" Margin="12,0,0,0" />
+
+                <Button Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{Binding CancelOperationCommand}"
+                        IsEnabled="{Binding CanCancelOperation}"
+                        Visibility="{Binding IsOperating, Converter={StaticResource BoolToVisibilityConverter}}"
+                        Foreground="#F44336"
+                        Margin="4,0,0,0"
+                        ToolTip="取消當前操作（中止並 kill docker 子進程）">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon Kind="Cancel" VerticalAlignment="Center" />
+                        <TextBlock Text="取消" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </materialDesign:Card>
 

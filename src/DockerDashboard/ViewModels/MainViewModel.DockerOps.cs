@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DockerDashboard.Models;
@@ -58,7 +59,13 @@ public partial class MainViewModel
             return;
         }
 
+        var cts = new CancellationTokenSource();
+        _operationCts?.Dispose();
+        _operationCts = cts;
+        var ct = cts.Token;
+
         IsOperating = true;
+        IsCancelling = false;
         StatusMessage = "正在並行啟動所有服務（快速模式）...";
         LogLines.Clear();
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ▶ 全部啟動（快速模式，不重建 image）");
@@ -66,33 +73,39 @@ public partial class MainViewModel
         var composeFiles = Projects.SelectMany(p => p.ComposeFiles).ToList();
         var errors = new ConcurrentBag<string>();
         var maxParallel = Math.Clamp(_batchStartupParallelism, 1, 8);
-        using var semaphore = new System.Threading.SemaphoreSlim(maxParallel);
+        using var semaphore = new SemaphoreSlim(maxParallel);
         IDisposable? refreshScope = _monitor.SuspendRefreshes();
 
         var tasks = composeFiles.Select(async compose =>
         {
-            await semaphore.WaitAsync();
+            try { await semaphore.WaitAsync(ct); }
+            catch (OperationCanceledException) { return; }
             try
             {
+                if (ct.IsCancellationRequested) return;
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] 啟動 {compose.FileName} ...");
                 var (exitCode, _) = await _dockerCli.ComposeUpFastWithLogAsync(
-                    compose.DirectoryPath, AppendLog);
-                if (exitCode != 0)
+                    compose.DirectoryPath, AppendLog, ct: ct);
+                if (ct.IsCancellationRequested)
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
+                else if (exitCode != 0)
                     errors.Add(compose.FileName);
                 else
                     AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 啟動完成");
+            }
+            catch (OperationCanceledException)
+            {
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
             }
             catch (Exception ex)
             {
                 errors.Add($"{compose.FileName}: {ex.Message}");
                 AppendLog($"[例外] {ex.Message}");
             }
-            finally
-            {
-                semaphore.Release();
-            }
+            finally { semaphore.Release(); }
         });
 
+        bool wasCancelled = false;
         try
         {
             await Task.WhenAll(tasks);
@@ -100,21 +113,25 @@ public partial class MainViewModel
         finally
         {
             refreshScope?.Dispose();
-            refreshScope = null;
+            wasCancelled = cts.IsCancellationRequested;
+            if (ReferenceEquals(_operationCts, cts))
+                _operationCts = null;
+            cts.Dispose();
             await _monitor.ForceRefreshAsync();
+            IsCancelling = false;
             IsOperating = false;
         }
 
-        if (!errors.IsEmpty)
+        if (wasCancelled)
+            StatusMessage = "⏹ 操作已取消";
+        else if (!errors.IsEmpty)
         {
             StatusMessage = $"⚠ {errors.Count} 個服務啟動失敗";
             foreach (var err in errors)
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {err}");
         }
         else
-        {
             StatusMessage = "✅ 所有服務已啟動";
-        }
     }
 
     [RelayCommand]
@@ -126,40 +143,52 @@ public partial class MainViewModel
             return;
         }
 
+        var cts = new CancellationTokenSource();
+        _operationCts?.Dispose();
+        _operationCts = cts;
+        var ct = cts.Token;
+
         IsOperating = true;
+        IsCancelling = false;
         StatusMessage = "正在並行增量重建所有 image（使用 cache，速度快）...";
         LogLines.Clear();
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ▶ 全部增量重建（使用 cache，只重建有變動的層）");
 
         var composeFiles = Projects.SelectMany(p => p.ComposeFiles).ToList();
         var errors = new ConcurrentBag<string>();
-        using var semaphore = new System.Threading.SemaphoreSlim(2);
+        using var semaphore = new SemaphoreSlim(2);
         IDisposable? refreshScope = _monitor.SuspendRefreshes();
 
         var tasks = composeFiles.Select(async compose =>
         {
-            await semaphore.WaitAsync();
+            try { await semaphore.WaitAsync(ct); }
+            catch (OperationCanceledException) { return; }
             try
             {
+                if (ct.IsCancellationRequested) return;
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] 增量重建+啟動 {compose.FileName} ...");
                 var (exitCode, _) = await _dockerCli.ComposeRebuildRestartWithLogAsync(
-                    compose.DirectoryPath, AppendLog);
-                if (exitCode != 0)
+                    compose.DirectoryPath, AppendLog, ct: ct);
+                if (ct.IsCancellationRequested)
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
+                else if (exitCode != 0)
                     errors.Add(compose.FileName);
                 else
                     AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 增量重建+啟動完成");
+            }
+            catch (OperationCanceledException)
+            {
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
             }
             catch (Exception ex)
             {
                 errors.Add($"{compose.FileName}: {ex.Message}");
                 AppendLog($"[例外] {ex.Message}");
             }
-            finally
-            {
-                semaphore.Release();
-            }
+            finally { semaphore.Release(); }
         });
 
+        bool wasCancelled = false;
         try
         {
             await Task.WhenAll(tasks);
@@ -167,21 +196,25 @@ public partial class MainViewModel
         finally
         {
             refreshScope?.Dispose();
-            refreshScope = null;
+            wasCancelled = cts.IsCancellationRequested;
+            if (ReferenceEquals(_operationCts, cts))
+                _operationCts = null;
+            cts.Dispose();
             await _monitor.ForceRefreshAsync();
+            IsCancelling = false;
             IsOperating = false;
         }
 
-        if (!errors.IsEmpty)
+        if (wasCancelled)
+            StatusMessage = "⏹ 操作已取消";
+        else if (!errors.IsEmpty)
         {
             StatusMessage = $"⚠ {errors.Count} 個服務增量重建失敗";
             foreach (var err in errors)
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {err}");
         }
         else
-        {
             StatusMessage = "✅ 所有服務已增量重建並啟動";
-        }
     }
 
     [RelayCommand]
@@ -193,40 +226,52 @@ public partial class MainViewModel
             return;
         }
 
+        var cts = new CancellationTokenSource();
+        _operationCts?.Dispose();
+        _operationCts = cts;
+        var ct = cts.Token;
+
         IsOperating = true;
+        IsCancelling = false;
         StatusMessage = "正在強制重建所有 image 並啟動（不使用 cache）...";
         LogLines.Clear();
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ▶ 全部強制重建（--no-cache，耗時較長）");
 
         var composeFiles = Projects.SelectMany(p => p.ComposeFiles).ToList();
         var errors = new ConcurrentBag<string>();
-        using var semaphore = new System.Threading.SemaphoreSlim(2);
+        using var semaphore = new SemaphoreSlim(2);
         IDisposable? refreshScope = _monitor.SuspendRefreshes();
 
         var tasks = composeFiles.Select(async compose =>
         {
-            await semaphore.WaitAsync();
+            try { await semaphore.WaitAsync(ct); }
+            catch (OperationCanceledException) { return; }
             try
             {
+                if (ct.IsCancellationRequested) return;
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] 強制重建+啟動 {compose.FileName} ...");
                 var (exitCode, _) = await _dockerCli.ComposeForceRebuildWithLogAsync(
-                    compose.DirectoryPath, AppendLog);
-                if (exitCode != 0)
+                    compose.DirectoryPath, AppendLog, ct);
+                if (ct.IsCancellationRequested)
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
+                else if (exitCode != 0)
                     errors.Add(compose.FileName);
                 else
                     AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 強制重建+啟動完成");
+            }
+            catch (OperationCanceledException)
+            {
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
             }
             catch (Exception ex)
             {
                 errors.Add($"{compose.FileName}: {ex.Message}");
                 AppendLog($"[例外] {ex.Message}");
             }
-            finally
-            {
-                semaphore.Release();
-            }
+            finally { semaphore.Release(); }
         });
 
+        bool wasCancelled = false;
         try
         {
             await Task.WhenAll(tasks);
@@ -234,21 +279,25 @@ public partial class MainViewModel
         finally
         {
             refreshScope?.Dispose();
-            refreshScope = null;
+            wasCancelled = cts.IsCancellationRequested;
+            if (ReferenceEquals(_operationCts, cts))
+                _operationCts = null;
+            cts.Dispose();
             await _monitor.ForceRefreshAsync();
+            IsCancelling = false;
             IsOperating = false;
         }
 
-        if (!errors.IsEmpty)
+        if (wasCancelled)
+            StatusMessage = "⏹ 操作已取消";
+        else if (!errors.IsEmpty)
         {
             StatusMessage = $"⚠ {errors.Count} 個服務重建失敗";
             foreach (var err in errors)
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {err}");
         }
         else
-        {
             StatusMessage = "✅ 所有服務已重建並啟動";
-        }
     }
 
     [RelayCommand]
@@ -260,7 +309,13 @@ public partial class MainViewModel
             return;
         }
 
+        var cts = new CancellationTokenSource();
+        _operationCts?.Dispose();
+        _operationCts = cts;
+        var ct = cts.Token;
+
         IsOperating = true;
+        IsCancelling = false;
         StatusMessage = "正在並行停止所有服務...";
         LogLines.Clear();
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ■ 全部停止（並行）");
@@ -273,13 +328,20 @@ public partial class MainViewModel
         {
             try
             {
+                if (ct.IsCancellationRequested) return;
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] 停止 {compose.FileName} ...");
                 var (exitCode, _) = await _dockerCli.ComposeDownWithLogAsync(
-                    compose.DirectoryPath, AppendLog);
-                if (exitCode != 0)
+                    compose.DirectoryPath, AppendLog, ct);
+                if (ct.IsCancellationRequested)
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
+                else if (exitCode != 0)
                     errors.Add(compose.FileName);
                 else
                     AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 停止完成");
+            }
+            catch (OperationCanceledException)
+            {
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
             }
             catch (Exception ex)
             {
@@ -288,6 +350,7 @@ public partial class MainViewModel
             }
         });
 
+        bool wasCancelled = false;
         try
         {
             await Task.WhenAll(tasks);
@@ -295,35 +358,47 @@ public partial class MainViewModel
         finally
         {
             refreshScope?.Dispose();
-            refreshScope = null;
+            wasCancelled = cts.IsCancellationRequested;
+            if (ReferenceEquals(_operationCts, cts))
+                _operationCts = null;
+            cts.Dispose();
             await _monitor.ForceRefreshAsync();
+            IsCancelling = false;
             IsOperating = false;
         }
 
-        if (!errors.IsEmpty)
+        if (wasCancelled)
+            StatusMessage = "⏹ 操作已取消";
+        else if (!errors.IsEmpty)
         {
             StatusMessage = $"⚠ {errors.Count} 個服務停止失敗";
             foreach (var err in errors)
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {err}");
         }
         else
-        {
             StatusMessage = "✅ 所有服務已停止";
-        }
     }
 
     [RelayCommand]
     private async Task StartServiceAsync(DockerService? service)
     {
         if (service == null) return;
+
+        var cts = new CancellationTokenSource();
+        _operationCts?.Dispose();
+        _operationCts = cts;
+        var ct = cts.Token;
+
         IsOperating = true;
+        IsCancelling = false;
         StatusMessage = $"正在啟動 {service.Name}...";
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ▶ 啟動 {service.Name}");
 
+        bool wasCancelled = false;
         try
         {
             var (exitCode, _) = await _dockerCli.ComposeUpFastWithLogAsync(
-                service.WorkingDirectory, AppendLog, service.Name);
+                service.WorkingDirectory, AppendLog, service.Name, ct);
             if (exitCode != 0)
             {
                 StatusMessage = $"⚠ {service.Name} 啟動失敗";
@@ -335,6 +410,10 @@ public partial class MainViewModel
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {service.Name} 啟動完成");
             }
         }
+        catch (OperationCanceledException)
+        {
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {service.Name} 啟動已取消");
+        }
         catch (Exception ex)
         {
             StatusMessage = $"⚠ {service.Name} 啟動失敗: {ex.Message}";
@@ -342,23 +421,39 @@ public partial class MainViewModel
         }
         finally
         {
+            wasCancelled = cts.IsCancellationRequested;
+            if (ReferenceEquals(_operationCts, cts))
+                _operationCts = null;
+            cts.Dispose();
             await _monitor.ForceRefreshAsync();
+            IsCancelling = false;
             IsOperating = false;
         }
+
+        if (wasCancelled)
+            StatusMessage = "⏹ 操作已取消";
     }
 
     [RelayCommand]
     private async Task StopServiceAsync(DockerService? service)
     {
         if (service == null) return;
+
+        var cts = new CancellationTokenSource();
+        _operationCts?.Dispose();
+        _operationCts = cts;
+        var ct = cts.Token;
+
         IsOperating = true;
+        IsCancelling = false;
         StatusMessage = $"正在停止 {service.Name}...";
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ■ 停止 {service.Name}");
 
+        bool wasCancelled = false;
         try
         {
             var (exitCode, _) = await _dockerCli.ComposeStopWithLogAsync(
-                service.WorkingDirectory, AppendLog, service.Name);
+                service.WorkingDirectory, AppendLog, service.Name, ct);
             if (exitCode != 0)
             {
                 StatusMessage = $"⚠ {service.Name} 停止失敗";
@@ -370,6 +465,10 @@ public partial class MainViewModel
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {service.Name} 停止完成");
             }
         }
+        catch (OperationCanceledException)
+        {
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {service.Name} 停止已取消");
+        }
         catch (Exception ex)
         {
             StatusMessage = $"⚠ {service.Name} 停止失敗: {ex.Message}";
@@ -377,23 +476,39 @@ public partial class MainViewModel
         }
         finally
         {
+            wasCancelled = cts.IsCancellationRequested;
+            if (ReferenceEquals(_operationCts, cts))
+                _operationCts = null;
+            cts.Dispose();
             await _monitor.ForceRefreshAsync();
+            IsCancelling = false;
             IsOperating = false;
         }
+
+        if (wasCancelled)
+            StatusMessage = "⏹ 操作已取消";
     }
 
     [RelayCommand]
     private async Task RestartServiceAsync(DockerService? service)
     {
         if (service == null) return;
+
+        var cts = new CancellationTokenSource();
+        _operationCts?.Dispose();
+        _operationCts = cts;
+        var ct = cts.Token;
+
         IsOperating = true;
+        IsCancelling = false;
         StatusMessage = $"正在重啟 {service.Name}...";
         AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔄 重啟 {service.Name}（不重建 image）");
 
+        bool wasCancelled = false;
         try
         {
             var (exitCode, _) = await _dockerCli.ComposeRestartWithLogAsync(
-                service.WorkingDirectory, AppendLog, service.Name);
+                service.WorkingDirectory, AppendLog, service.Name, ct);
             if (exitCode != 0)
             {
                 StatusMessage = $"⚠ {service.Name} 重啟失敗";
@@ -405,6 +520,10 @@ public partial class MainViewModel
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {service.Name} 重啟完成");
             }
         }
+        catch (OperationCanceledException)
+        {
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {service.Name} 重啟已取消");
+        }
         catch (Exception ex)
         {
             StatusMessage = $"⚠ {service.Name} 重啟失敗: {ex.Message}";
@@ -412,23 +531,39 @@ public partial class MainViewModel
         }
         finally
         {
+            wasCancelled = cts.IsCancellationRequested;
+            if (ReferenceEquals(_operationCts, cts))
+                _operationCts = null;
+            cts.Dispose();
             await _monitor.ForceRefreshAsync();
+            IsCancelling = false;
             IsOperating = false;
         }
+
+        if (wasCancelled)
+            StatusMessage = "⏹ 操作已取消";
     }
 
     [RelayCommand]
     private async Task RebuildRestartServiceAsync(DockerService? service)
     {
         if (service == null) return;
+
+        var cts = new CancellationTokenSource();
+        _operationCts?.Dispose();
+        _operationCts = cts;
+        var ct = cts.Token;
+
         IsOperating = true;
+        IsCancelling = false;
         StatusMessage = $"正在重建並重啟 {service.Name}...";
         AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔨 重建重啟 {service.Name}（重新 build image）");
 
+        bool wasCancelled = false;
         try
         {
             var (exitCode, _) = await _dockerCli.ComposeRebuildRestartWithLogAsync(
-                service.WorkingDirectory, AppendLog, service.Name);
+                service.WorkingDirectory, AppendLog, service.Name, ct);
             if (exitCode != 0)
             {
                 StatusMessage = $"⚠ {service.Name} 重建重啟失敗";
@@ -440,6 +575,10 @@ public partial class MainViewModel
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {service.Name} 重建重啟完成");
             }
         }
+        catch (OperationCanceledException)
+        {
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {service.Name} 重建已取消");
+        }
         catch (Exception ex)
         {
             StatusMessage = $"⚠ {service.Name} 重建重啟失敗: {ex.Message}";
@@ -447,27 +586,47 @@ public partial class MainViewModel
         }
         finally
         {
+            wasCancelled = cts.IsCancellationRequested;
+            if (ReferenceEquals(_operationCts, cts))
+                _operationCts = null;
+            cts.Dispose();
             await _monitor.ForceRefreshAsync();
+            IsCancelling = false;
             IsOperating = false;
         }
+
+        if (wasCancelled)
+            StatusMessage = "⏹ 操作已取消";
     }
 
     [RelayCommand]
     private async Task ComposeUpAsync(ComposeFile? compose)
     {
         if (compose == null) return;
+
+        var cts = new CancellationTokenSource();
+        _operationCts?.Dispose();
+        _operationCts = cts;
+        var ct = cts.Token;
+
         IsOperating = true;
+        IsCancelling = false;
         StatusMessage = $"正在啟動 {compose.FileName}...";
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ▶ 啟動 {compose.FileName}");
 
+        bool wasCancelled = false;
         try
         {
-            var (exitCode, _) = await _dockerCli.ComposeUpFastWithLogAsync(compose.DirectoryPath, AppendLog);
+            var (exitCode, _) = await _dockerCli.ComposeUpFastWithLogAsync(compose.DirectoryPath, AppendLog, ct: ct);
             if (exitCode == 0)
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 啟動完成");
             else
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {compose.FileName} 啟動失敗");
             StatusMessage = exitCode == 0 ? $"✅ {compose.FileName} 已啟動" : $"⚠ {compose.FileName} 啟動失敗";
+        }
+        catch (OperationCanceledException)
+        {
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
         }
         catch (Exception ex)
         {
@@ -476,27 +635,47 @@ public partial class MainViewModel
         }
         finally
         {
+            wasCancelled = cts.IsCancellationRequested;
+            if (ReferenceEquals(_operationCts, cts))
+                _operationCts = null;
+            cts.Dispose();
             await _monitor.ForceRefreshAsync();
+            IsCancelling = false;
             IsOperating = false;
         }
+
+        if (wasCancelled)
+            StatusMessage = "⏹ 操作已取消";
     }
 
     [RelayCommand]
     private async Task ComposeDownAsync(ComposeFile? compose)
     {
         if (compose == null) return;
+
+        var cts = new CancellationTokenSource();
+        _operationCts?.Dispose();
+        _operationCts = cts;
+        var ct = cts.Token;
+
         IsOperating = true;
+        IsCancelling = false;
         StatusMessage = $"正在停止 {compose.FileName}...";
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ■ 停止 {compose.FileName}");
 
+        bool wasCancelled = false;
         try
         {
-            var (exitCode, _) = await _dockerCli.ComposeDownWithLogAsync(compose.DirectoryPath, AppendLog);
+            var (exitCode, _) = await _dockerCli.ComposeDownWithLogAsync(compose.DirectoryPath, AppendLog, ct);
             if (exitCode == 0)
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 停止完成");
             else
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {compose.FileName} 停止失敗");
             StatusMessage = exitCode == 0 ? $"✅ {compose.FileName} 已停止" : $"⚠ {compose.FileName} 停止失敗";
+        }
+        catch (OperationCanceledException)
+        {
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
         }
         catch (Exception ex)
         {
@@ -505,9 +684,17 @@ public partial class MainViewModel
         }
         finally
         {
+            wasCancelled = cts.IsCancellationRequested;
+            if (ReferenceEquals(_operationCts, cts))
+                _operationCts = null;
+            cts.Dispose();
             await _monitor.ForceRefreshAsync();
+            IsCancelling = false;
             IsOperating = false;
         }
+
+        if (wasCancelled)
+            StatusMessage = "⏹ 操作已取消";
     }
 
     [RelayCommand]

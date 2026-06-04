@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using DockerDashboard.Models;
 using DockerDashboard.Services;
 using Application = System.Windows.Application;
@@ -29,6 +30,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ConcurrentQueue<string> _pendingLogQueue = new();
     private int _isLogFlushScheduled;
     private int _batchStartupParallelism = 3;
+    private CancellationTokenSource? _operationCts;
 
     public ObservableCollection<DockerProject> Projects { get; } = [];
     public ObservableCollection<string> LogLines { get; } = [];
@@ -54,7 +56,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(CanAllUp))]
     [NotifyPropertyChangedFor(nameof(CanAllDown))]
     [NotifyPropertyChangedFor(nameof(CanRebuild))]
+    [NotifyPropertyChangedFor(nameof(CanCancelOperation))]
     private bool _isOperating;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanCancelOperation))]
+    private bool _isCancelling;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAllUp))]
@@ -73,6 +80,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public bool CanAllUp => !IsOperating && TotalCount > 0 && RunningCount < TotalCount;
     public bool CanRebuild => !IsOperating && TotalCount > 0;
     public bool CanAllDown => !IsOperating && RunningCount > 0;
+    public bool CanCancelOperation => IsOperating && !IsCancelling;
 
     [ObservableProperty]
     private string _statusMessage = "就緒";
@@ -405,6 +413,30 @@ public partial class MainViewModel : ObservableObject, IDisposable
             }
             catch (ObjectDisposedException) { }
         });
+
+        _ = FetchCrashLogsAsync(containerName);
+    }
+
+    private async Task FetchCrashLogsAsync(string containerName)
+    {
+        try
+        {
+            var logs = await _dockerCli.GetContainerLogsAsync(containerName, tail: 30);
+            if (string.IsNullOrWhiteSpace(logs)) return;
+
+            Application.Current?.Dispatcher.InvokeAsync(() =>
+            {
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ── {containerName} 最後 30 行日誌 ──");
+                foreach (var line in logs.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                    AppendLog($"  {line.TrimEnd()}");
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ── 日誌結束 ──");
+            });
+        }
+        catch (Exception ex)
+        {
+            Application.Current?.Dispatcher.InvokeAsync(() =>
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠️ 無法取得 {containerName} 日誌: {ex.Message}"));
+        }
     }
 
     internal void AppendLog(string message)
@@ -454,8 +486,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return links.Distinct().ToList();
     }
 
+    [RelayCommand]
+    private void CancelOperation()
+    {
+        if (!IsOperating) return;
+        IsCancelling = true;
+        StatusMessage = "⏹ 正在取消操作...";
+        _operationCts?.Cancel();
+    }
+
     public void Dispose()
     {
+        _operationCts?.Cancel();
+        _operationCts?.Dispose();
         StopLogStream();
         _monitor.ContainersUpdated -= OnContainersUpdated;
         _monitor.ContainerCrashed -= OnContainerCrashed;
