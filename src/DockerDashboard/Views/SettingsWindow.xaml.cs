@@ -29,6 +29,7 @@ public partial class SettingsWindow : Window
         AutoWatchToggle.IsChecked = settings.AutoWatchEnabled;
         WatchDebounceSlider.Value = settings.WatchDebounceSeconds;
         BuildKitSlider.Value = settings.BuildKitParallelism;
+        StartupParallelSlider.Value = Math.Clamp(settings.StartupParallelism, 1, 8);
         AutoCheckUpdateToggle.IsChecked = settings.AutoCheckUpdate;
         CurrentVersionText.Text = updateService.CurrentVersion;
 
@@ -230,6 +231,7 @@ public partial class SettingsWindow : Window
         _settings.AutoWatchEnabled = AutoWatchToggle.IsChecked == true;
         _settings.WatchDebounceSeconds = (int)WatchDebounceSlider.Value;
         _settings.BuildKitParallelism = Math.Clamp((int)BuildKitSlider.Value, 0, 8);
+        _settings.StartupParallelism = Math.Clamp((int)StartupParallelSlider.Value, 1, 8);
         _settings.AutoCheckUpdate = AutoCheckUpdateToggle.IsChecked == true;
 
         if (string.IsNullOrEmpty(_settings.WslDistroName))

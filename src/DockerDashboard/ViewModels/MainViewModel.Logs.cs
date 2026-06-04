@@ -106,8 +106,7 @@ public partial class MainViewModel
         {
             var line = await reader.ReadLineAsync(ct);
             if (line == null) break;
-
-            Application.Current?.Dispatcher.InvokeAsync(() => AppendLogLine(line));
+            AppendLog(line);
         }
     }
 

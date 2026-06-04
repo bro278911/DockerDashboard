@@ -19,6 +19,10 @@ public class ContainerMonitorService : IDisposable
     private Task? _eventsTask;
     private ProcessStream? _eventsProcess;
     private Dictionary<string, ContainerStatus> _previousStates = new();
+    private readonly object _eventRefreshLock = new();
+    private CancellationTokenSource? _eventRefreshCts;
+    private int _refreshSuspendCount;
+    private int _pendingRefresh;
 
     public event Action<List<ContainerInfo>>? ContainersUpdated;
     public event Action<string, ContainerStatus>? ContainerCrashed;
@@ -40,6 +44,7 @@ public class ContainerMonitorService : IDisposable
     public void Stop()
     {
         _cts?.Cancel();
+        CancelEventRefreshDebounce();
         _eventsProcess?.Dispose();
         _eventsProcess = null;
         _timer?.Dispose();
@@ -53,6 +58,7 @@ public class ContainerMonitorService : IDisposable
     public async Task StopAsync()
     {
         _cts?.Cancel();
+        CancelEventRefreshDebounce();
         _eventsProcess?.Dispose();
         _eventsProcess = null;
 
@@ -81,6 +87,13 @@ public class ContainerMonitorService : IDisposable
         {
             try
             {
+                if (IsRefreshSuspended())
+                {
+                    if (_timer != null)
+                        await _timer.WaitForNextTickAsync(ct);
+                    continue;
+                }
+
                 var containers = await _dockerCli.GetRunningContainersAsync(ct);
                 DetectCrashes(containers);
                 ContainersUpdated?.Invoke(containers);
@@ -120,8 +133,7 @@ public class ContainerMonitorService : IDisposable
 
                     if (IsContainerStateEvent(line))
                     {
-                        await Task.Delay(500, ct);
-                        await ForceRefreshAsync();
+                        ScheduleEventRefresh();
                     }
                 }
             }
@@ -196,6 +208,12 @@ public class ContainerMonitorService : IDisposable
     {
         try
         {
+            if (IsRefreshSuspended())
+            {
+                Interlocked.Exchange(ref _pendingRefresh, 1);
+                return;
+            }
+
             var containers = await _dockerCli.GetRunningContainersAsync();
             DetectCrashes(containers);
             ContainersUpdated?.Invoke(containers);
@@ -223,6 +241,7 @@ public class ContainerMonitorService : IDisposable
     {
         // 先取消並殺掉 events process，再靜默等背景 task 最多 3 秒收尾
         _cts?.Cancel();
+        CancelEventRefreshDebounce();
         _eventsProcess?.Dispose();
         _eventsProcess = null;
         _timer?.Dispose();
@@ -242,5 +261,67 @@ public class ContainerMonitorService : IDisposable
         _cts?.Dispose();
         _cts = null;
         GC.SuppressFinalize(this);
+    }
+
+    public IDisposable SuspendRefreshes()
+    {
+        Interlocked.Increment(ref _refreshSuspendCount);
+        return new RefreshSuspension(this);
+    }
+
+    private bool IsRefreshSuspended() => Volatile.Read(ref _refreshSuspendCount) > 0;
+
+    private void ResumeRefreshes()
+    {
+        if (Interlocked.Decrement(ref _refreshSuspendCount) != 0)
+            return;
+
+        if (Interlocked.Exchange(ref _pendingRefresh, 0) == 1)
+            _ = ForceRefreshAsync();
+    }
+
+    private void ScheduleEventRefresh()
+    {
+        CancellationTokenSource cts;
+        lock (_eventRefreshLock)
+        {
+            _eventRefreshCts?.Cancel();
+            _eventRefreshCts?.Dispose();
+            _eventRefreshCts = new CancellationTokenSource();
+            cts = _eventRefreshCts;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(700, cts.Token);
+                await ForceRefreshAsync();
+            }
+            catch (OperationCanceledException) { }
+        });
+    }
+
+    private void CancelEventRefreshDebounce()
+    {
+        lock (_eventRefreshLock)
+        {
+            _eventRefreshCts?.Cancel();
+            _eventRefreshCts?.Dispose();
+            _eventRefreshCts = null;
+        }
+    }
+
+    private sealed class RefreshSuspension : IDisposable
+    {
+        private ContainerMonitorService? _owner;
+
+        public RefreshSuspension(ContainerMonitorService owner) => _owner = owner;
+
+        public void Dispose()
+        {
+            var owner = Interlocked.Exchange(ref _owner, null);
+            owner?.ResumeRefreshes();
+        }
     }
 }
