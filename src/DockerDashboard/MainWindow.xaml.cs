@@ -100,6 +100,9 @@ public partial class MainWindow : Window
         if (_notifyIcon != null)
         {
             _notifyIcon.Visible = false;
+            // WinForms NotifyIcon.Dispose() 設外部 Icon 時 ownIcon=false，不會 dispose Icon，
+            // 須手動釋放 HICON，避免 GDI handle 洩漏
+            _notifyIcon.Icon?.Dispose();
             _notifyIcon.Dispose();
             _notifyIcon = null;
         }

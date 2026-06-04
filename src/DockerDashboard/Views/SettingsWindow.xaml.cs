@@ -5,23 +5,32 @@ using System.Threading.Tasks;
 using System.Windows;
 using DockerDashboard.Models;
 using DockerDashboard.Services;
+using Velopack;
+using WpfBrushes = System.Windows.Media.Brushes;
 
 namespace DockerDashboard.Views;
 
 public partial class SettingsWindow : Window
 {
     private readonly AppSettings _settings;
+    private readonly UpdateService _updateService;
+    private readonly Action<UpdateInfo>? _onUpdateFound;
 
-    public SettingsWindow(AppSettings settings)
+    public SettingsWindow(AppSettings settings, UpdateService updateService, Action<UpdateInfo>? onUpdateFound = null)
     {
         InitializeComponent();
         _settings = settings;
+        _updateService = updateService;
+        _onUpdateFound = onUpdateFound;
+
         PollSlider.Value = settings.PollIntervalSeconds;
         ComposeV2Toggle.IsChecked = settings.UseComposeV2;
         WslDistroBox.Text = settings.WslDistroName;
         AutoWatchToggle.IsChecked = settings.AutoWatchEnabled;
         WatchDebounceSlider.Value = settings.WatchDebounceSeconds;
         BuildKitSlider.Value = settings.BuildKitParallelism;
+        AutoCheckUpdateToggle.IsChecked = settings.AutoCheckUpdate;
+        CurrentVersionText.Text = updateService.CurrentVersion;
 
         if (settings.DockerMode == DockerMode.Wsl2)
             ModeWsl2.IsChecked = true;
@@ -48,12 +57,12 @@ public partial class SettingsWindow : Window
         if (string.IsNullOrEmpty(distro))
         {
             TestResultText.Text = "❌ 請輸入 WSL 發行版名稱";
-            TestResultText.Foreground = System.Windows.Media.Brushes.OrangeRed;
+            TestResultText.Foreground = WpfBrushes.OrangeRed;
             return;
         }
 
         TestResultText.Text = "⏳ 測試中...";
-        TestResultText.Foreground = System.Windows.Media.Brushes.Gray;
+        TestResultText.Foreground = WpfBrushes.Gray;
         TestConnectionBtn.IsEnabled = false;
 
         try
@@ -62,7 +71,7 @@ public partial class SettingsWindow : Window
             if (!wslOk)
             {
                 TestResultText.Text = $"❌ WSL 發行版 '{distro}' 不可用：{wslMsg}";
-                TestResultText.Foreground = System.Windows.Media.Brushes.OrangeRed;
+                TestResultText.Foreground = WpfBrushes.OrangeRed;
                 return;
             }
 
@@ -90,12 +99,12 @@ public partial class SettingsWindow : Window
                     ? $"❌ Docker daemon 未啟動：{dockerMsg}\n💡 請在 Ubuntu 終端執行：sudo service docker start"
                     : $"❌ WSL2 中 Docker 不可用：{dockerMsg}";
                 TestResultText.Text = hint;
-                TestResultText.Foreground = System.Windows.Media.Brushes.OrangeRed;
+                TestResultText.Foreground = WpfBrushes.OrangeRed;
                 return;
             }
 
             TestResultText.Text = $"✅ 連線成功！Docker {dockerMsg}";
-            TestResultText.Foreground = System.Windows.Media.Brushes.Green;
+            TestResultText.Foreground = WpfBrushes.Green;
         }
         finally
         {
@@ -175,6 +184,43 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        CheckUpdateBtn.IsEnabled = false;
+        UpdateResultText.Text = "⏳ 檢查中...";
+        UpdateResultText.Foreground = WpfBrushes.Gray;
+        try
+        {
+            var info = await _updateService.CheckForUpdatesAsync();
+            if (info is not null)
+            {
+                var ver = info.TargetFullRelease.Version.ToString();
+                UpdateResultText.Text = $"✅ 發現新版本 v{ver}，關閉設定後點擊工具列按鈕安裝";
+                UpdateResultText.Foreground = WpfBrushes.Green;
+                _onUpdateFound?.Invoke(info);
+            }
+            else if (_updateService.IsInstalled)
+            {
+                UpdateResultText.Text = $"✅ 已是最新版本 (v{_updateService.CurrentVersion})";
+                UpdateResultText.Foreground = WpfBrushes.Green;
+            }
+            else
+            {
+                UpdateResultText.Text = "⚠ 開發模式，略過更新檢查";
+                UpdateResultText.Foreground = WpfBrushes.Orange;
+            }
+        }
+        catch
+        {
+            UpdateResultText.Text = "❌ 無法連線至更新伺服器";
+            UpdateResultText.Foreground = WpfBrushes.OrangeRed;
+        }
+        finally
+        {
+            CheckUpdateBtn.IsEnabled = true;
+        }
+    }
+
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         _settings.PollIntervalSeconds = (int)PollSlider.Value;
@@ -184,6 +230,7 @@ public partial class SettingsWindow : Window
         _settings.AutoWatchEnabled = AutoWatchToggle.IsChecked == true;
         _settings.WatchDebounceSeconds = (int)WatchDebounceSlider.Value;
         _settings.BuildKitParallelism = Math.Clamp((int)BuildKitSlider.Value, 0, 8);
+        _settings.AutoCheckUpdate = AutoCheckUpdateToggle.IsChecked == true;
 
         if (string.IsNullOrEmpty(_settings.WslDistroName))
             _settings.WslDistroName = "Ubuntu";

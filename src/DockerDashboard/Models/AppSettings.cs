@@ -20,4 +20,5 @@ public class AppSettings
     public int WatchDebounceSeconds { get; set; } = 2;
     public List<string> WatchEnabledServiceKeys { get; set; } = [];
     public int BuildKitParallelism { get; set; } = 0;
+    public bool AutoCheckUpdate { get; set; } = true;
 }

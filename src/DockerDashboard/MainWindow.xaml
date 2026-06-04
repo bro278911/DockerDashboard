@@ -127,6 +127,21 @@
                     </StackPanel>
                 </Button>
 
+                <Separator Style="{StaticResource MaterialDesignLightSeparator}" Margin="8,0" />
+
+                <!-- 發現新版本後顯示（HasUpdate = true） -->
+                <Button Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{Binding InstallUpdateCommand}"
+                        IsEnabled="{Binding CanInstallUpdate}"
+                        Foreground="#4CAF50"
+                        ToolTip="點擊下載並安裝更新，完成後自動重啟應用程式"
+                        Visibility="{Binding HasUpdate, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon Kind="CloudDownload" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding UpdateStatusText}" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
                 <!-- 操作中指示器 -->
                 <ProgressBar Style="{StaticResource MaterialDesignCircularProgressBar}"
                              IsIndeterminate="True"

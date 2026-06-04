@@ -221,7 +221,26 @@ public class ContainerMonitorService : IDisposable
 
     public void Dispose()
     {
-        Stop();
+        // 先取消並殺掉 events process，再靜默等背景 task 最多 3 秒收尾
+        _cts?.Cancel();
+        _eventsProcess?.Dispose();
+        _eventsProcess = null;
+        _timer?.Dispose();
+        _timer = null;
+
+        var pending = new[] { _monitorTask, _eventsTask }
+            .Where(t => t is { IsCompleted: false })
+            .Select(t => t!)
+            .ToArray();
+        if (pending.Length > 0)
+        {
+            try { Task.WhenAll(pending).Wait(TimeSpan.FromSeconds(3)); } catch { }
+        }
+
+        _monitorTask = null;
+        _eventsTask = null;
+        _cts?.Dispose();
+        _cts = null;
         GC.SuppressFinalize(this);
     }
 }
