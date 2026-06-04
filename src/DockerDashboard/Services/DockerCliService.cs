@@ -353,6 +353,12 @@ public class DockerCliService : IDockerCliService
         return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
     }
 
+    public async Task<string> GetContainerLogsAsync(string containerNameOrId, int tail = 30, CancellationToken ct = default)
+    {
+        var (exitCode, output) = await RunCommandAsync("docker", ["logs", "--tail", tail.ToString(), containerNameOrId], null, ct);
+        return exitCode == 0 ? output : string.Empty;
+    }
+
     public ProcessStream StartDockerEvents()
     {
         var psi = CreatePsi("docker", ["events", "--format", "{{json .}}", "--filter", "type=container"], null);
