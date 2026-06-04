@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -24,6 +26,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly WatchRebuildService _watchService;
     private readonly UpdateService _updateService;
     private Forms.NotifyIcon? _notifyIcon;
+    private readonly ConcurrentQueue<string> _pendingLogQueue = new();
+    private int _isLogFlushScheduled;
+    private int _batchStartupParallelism = 3;
 
     public ObservableCollection<DockerProject> Projects { get; } = [];
     public ObservableCollection<string> LogLines { get; } = [];
@@ -210,6 +215,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         _watchService.IsEnabled = settings.AutoWatchEnabled;
         _watchService.DebounceDelay = TimeSpan.FromSeconds(settings.WatchDebounceSeconds);
+        _batchStartupParallelism = Math.Clamp(settings.StartupParallelism, 1, 8);
     }
 
     internal void RestoreWatchStateFromSettings(AppSettings settings)
@@ -278,8 +284,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (_gitService.IsGitRepository(folderPath))
         {
             project.IsGitRepo = true;
-            project.CurrentBranch = await _gitService.GetCurrentBranchAsync(folderPath);
-            project.IsDirty = await _gitService.IsDirtyAsync(folderPath);
+            var branchTask = _gitService.GetCurrentBranchAsync(folderPath);
+            var dirtyTask = _gitService.IsDirtyAsync(folderPath);
+            await Task.WhenAll(branchTask, dirtyTask);
+            project.CurrentBranch = branchTask.Result;
+            project.IsDirty = dirtyTask.Result;
         }
 
         return project;
@@ -400,7 +409,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     internal void AppendLog(string message)
     {
-        Application.Current?.Dispatcher.InvokeAsync(() => AppendLogLine(message));
+        _pendingLogQueue.Enqueue(message);
+        if (Interlocked.Exchange(ref _isLogFlushScheduled, 1) == 1)
+            return;
+
+        Application.Current?.Dispatcher.InvokeAsync(FlushPendingLogs);
+    }
+
+    private void FlushPendingLogs()
+    {
+        try
+        {
+            while (_pendingLogQueue.TryDequeue(out var line))
+                AppendLogLine(line);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isLogFlushScheduled, 0);
+            if (!_pendingLogQueue.IsEmpty && Interlocked.Exchange(ref _isLogFlushScheduled, 1) == 0)
+                Application.Current?.Dispatcher.InvokeAsync(FlushPendingLogs);
+        }
     }
 
     private void AppendLogLine(string message)

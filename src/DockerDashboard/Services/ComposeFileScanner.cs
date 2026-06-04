@@ -30,17 +30,19 @@ public class ComposeFileScanner
         if (!Directory.Exists(folderPath))
             return results;
 
-        foreach (var file in Directory.EnumerateFiles(folderPath, "*", SearchOption.AllDirectories))
+        ComposeFileHelper.ClearCache();
+        var seenDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var directory in EnumerateComposeDirectories(folderPath))
         {
-            var fileName = Path.GetFileName(file);
-            if (!MainComposeFileNames.Contains(fileName, StringComparer.OrdinalIgnoreCase))
+            if (!seenDirectories.Add(directory))
                 continue;
 
-            var relativePath = Path.GetRelativePath(folderPath, file);
-            if (ShouldSkipPath(relativePath))
+            var mainComposePath = FindMainComposeFile(directory);
+            if (mainComposePath == null)
                 continue;
 
-            var composeFile = await ParseWithDockerCliAsync(file) ?? ParseManually(file);
+            var composeFile = await ParseWithDockerCliAsync(mainComposePath) ?? ParseManually(mainComposePath);
             if (composeFile != null)
                 results.Add(composeFile);
         }
@@ -276,9 +278,46 @@ public class ComposeFileScanner
         ["obj", "bin", "node_modules", ".git", "packages"],
         StringComparer.OrdinalIgnoreCase);
 
-    private static bool ShouldSkipPath(string relativePath)
+    private static IEnumerable<string> EnumerateComposeDirectories(string rootPath)
     {
-        var segments = relativePath.Split([Path.DirectorySeparatorChar, '/'], StringSplitOptions.RemoveEmptyEntries);
-        return segments.Any(seg => SkipDirs.Contains(seg));
+        var pending = new Stack<string>();
+        pending.Push(rootPath);
+
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+
+            if (FindMainComposeFile(current) != null)
+                yield return current;
+
+            IEnumerable<string> children;
+            try
+            {
+                children = Directory.EnumerateDirectories(current);
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (var child in children)
+            {
+                if (SkipDirs.Contains(Path.GetFileName(child)))
+                    continue;
+                pending.Push(child);
+            }
+        }
+    }
+
+    private static string? FindMainComposeFile(string directory)
+    {
+        foreach (var name in MainComposeFileNames)
+        {
+            var candidate = Path.Combine(directory, name);
+            if (File.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
     }
 }

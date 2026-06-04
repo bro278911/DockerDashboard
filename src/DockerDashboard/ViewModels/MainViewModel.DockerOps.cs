@@ -65,9 +65,13 @@ public partial class MainViewModel
 
         var composeFiles = Projects.SelectMany(p => p.ComposeFiles).ToList();
         var errors = new ConcurrentBag<string>();
+        var maxParallel = Math.Clamp(_batchStartupParallelism, 1, 8);
+        using var semaphore = new System.Threading.SemaphoreSlim(maxParallel);
+        IDisposable? refreshScope = _monitor.SuspendRefreshes();
 
         var tasks = composeFiles.Select(async compose =>
         {
+            await semaphore.WaitAsync();
             try
             {
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] 啟動 {compose.FileName} ...");
@@ -83,6 +87,10 @@ public partial class MainViewModel
                 errors.Add($"{compose.FileName}: {ex.Message}");
                 AppendLog($"[例外] {ex.Message}");
             }
+            finally
+            {
+                semaphore.Release();
+            }
         });
 
         try
@@ -91,6 +99,8 @@ public partial class MainViewModel
         }
         finally
         {
+            refreshScope?.Dispose();
+            refreshScope = null;
             await _monitor.ForceRefreshAsync();
             IsOperating = false;
         }
@@ -124,6 +134,7 @@ public partial class MainViewModel
         var composeFiles = Projects.SelectMany(p => p.ComposeFiles).ToList();
         var errors = new ConcurrentBag<string>();
         using var semaphore = new System.Threading.SemaphoreSlim(2);
+        IDisposable? refreshScope = _monitor.SuspendRefreshes();
 
         var tasks = composeFiles.Select(async compose =>
         {
@@ -155,6 +166,8 @@ public partial class MainViewModel
         }
         finally
         {
+            refreshScope?.Dispose();
+            refreshScope = null;
             await _monitor.ForceRefreshAsync();
             IsOperating = false;
         }
@@ -188,6 +201,7 @@ public partial class MainViewModel
         var composeFiles = Projects.SelectMany(p => p.ComposeFiles).ToList();
         var errors = new ConcurrentBag<string>();
         using var semaphore = new System.Threading.SemaphoreSlim(2);
+        IDisposable? refreshScope = _monitor.SuspendRefreshes();
 
         var tasks = composeFiles.Select(async compose =>
         {
@@ -219,6 +233,8 @@ public partial class MainViewModel
         }
         finally
         {
+            refreshScope?.Dispose();
+            refreshScope = null;
             await _monitor.ForceRefreshAsync();
             IsOperating = false;
         }
@@ -251,6 +267,7 @@ public partial class MainViewModel
 
         var composeFiles = Projects.SelectMany(p => p.ComposeFiles).ToList();
         var errors = new ConcurrentBag<string>();
+        IDisposable? refreshScope = _monitor.SuspendRefreshes();
 
         var tasks = composeFiles.Select(async compose =>
         {
@@ -277,6 +294,8 @@ public partial class MainViewModel
         }
         finally
         {
+            refreshScope?.Dispose();
+            refreshScope = null;
             await _monitor.ForceRefreshAsync();
             IsOperating = false;
         }
