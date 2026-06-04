@@ -65,6 +65,7 @@ dotnet publish -c Release -r win-x64 --self-contained false -o ../../publish
 - **全域開關**：設定視窗 → 「Auto Watch & Rebuild」ToggleButton（需先開啟才能生效）
 - **個別服務**：主畫面服務列右側 Watch 圖示按鈕（或右鍵選單）獨立開關每個服務
 - **持久化**：啟用清單（`WatchEnabledServiceKeys`）和防抖秒數（`WatchDebounceSeconds`）儲存於 `settings.json`
+- **啟動平行度**：可於設定調整「全部啟動平行度」（1–8，建議 2–4）以平衡速度與資源競爭
 
 ### Docker 修復工具
 
