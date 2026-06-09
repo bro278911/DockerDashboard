@@ -8,7 +8,7 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>Assets\pooh.ico</ApplicationIcon>
-    <Version>1.1.1</Version>
+    <Version>1.1.5</Version>
     <StartupObject>DockerDashboard.Program</StartupObject>
   </PropertyGroup>
 

@@ -128,11 +128,16 @@
                               VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Auto"
                               Margin="0,0,0,6">
-                    <TextBlock x:Name="LogText"
-                               FontFamily="Consolas, Courier New"
-                               FontSize="11" Foreground="#E0E0E0"
-                               TextWrapping="NoWrap"
-                               Padding="10,4" />
+                    <TextBox x:Name="LogText"
+                             Style="{x:Null}"
+                             FontFamily="Consolas, Courier New"
+                             FontSize="11" Foreground="#E0E0E0"
+                             TextWrapping="NoWrap"
+                             Padding="10,4"
+                             IsReadOnly="True"
+                             IsReadOnlyCaretVisible="True"
+                             Background="Transparent"
+                             BorderThickness="0" />
                 </ScrollViewer>
             </Grid>
         </Border>

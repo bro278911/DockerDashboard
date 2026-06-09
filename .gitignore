@@ -3,6 +3,9 @@ bin/
 obj/
 publish/
 
+# Release artifacts
+Releases/
+
 # Visual Studio
 .vs/
 *.user
@@ -28,6 +31,4 @@ desktop.ini
 
 # Logs
 *.log
-
-# App user data
-%APPDATA%/DockerDashboard/
+scripts/release.ps1

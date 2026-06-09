@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
@@ -108,6 +110,23 @@ public partial class MainViewModel
             if (line == null) break;
             AppendLog(line);
         }
+    }
+
+    [RelayCommand]
+    private void CopySelectedLogs(IList? selectedItems)
+    {
+        if (selectedItems is null || selectedItems.Count == 0) return;
+        var text = string.Join(Environment.NewLine, selectedItems.Cast<string>());
+        System.Windows.Clipboard.SetText(text);
+        StatusMessage = $"已複製 {selectedItems.Count} 行日誌";
+    }
+
+    [RelayCommand]
+    private void CopyAllLogs()
+    {
+        if (LogLines.Count == 0) return;
+        System.Windows.Clipboard.SetText(string.Join(Environment.NewLine, LogLines));
+        StatusMessage = $"已複製全部 {LogLines.Count} 行日誌";
     }
 
     internal void StopLogStream()
