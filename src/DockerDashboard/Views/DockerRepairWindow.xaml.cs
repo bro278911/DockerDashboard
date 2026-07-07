@@ -87,6 +87,12 @@ public partial class DockerRepairWindow : Window
         }
     }
 
+    protected override void OnClosed(EventArgs e)
+    {
+        _cts?.Cancel();
+        base.OnClosed(e);
+    }
+
     private async Task RunStep(string label, Func<Task<(int ExitCode, string Output)>> action)
     {
         AppendLog($"▶ {label}...");
@@ -121,7 +127,6 @@ public partial class DockerRepairWindow : Window
 
     private void Close_Click(object sender, RoutedEventArgs e)
     {
-        _cts?.Cancel();
         Close();
     }
 }
