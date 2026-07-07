@@ -246,7 +246,7 @@ public class DockerCliService : IDockerCliService
     public async Task<(int ExitCode, string Output)> ComposeForceRebuildWithLogAsync(
         string workingDirectory, Action<string> onOutput, CancellationToken ct = default)
     {
-        var buildArgs = BuildComposeArgs(workingDirectory, ["build", "--no-cache"]);
+        var buildArgs = BuildComposeArgs(workingDirectory, ["build", "--no-cache", "--pull"]);
         var (buildExit, _) = await RunCommandWithLogAsync(
             ComposeCommand, buildArgs, workingDirectory, onOutput, ct, withBuildEnv: true);
         if (buildExit != 0)
