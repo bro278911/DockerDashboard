@@ -112,16 +112,18 @@ public class DockerCliService : IDockerCliService
             var psi = CreatePsi("docker", ["ps", "-a", "--format", "{{json .}}"], null);
 
             using var process = new Process { StartInfo = psi };
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
             process.Start();
 
             string stdout;
             try
             {
-                var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
-                var stderrTask = process.StandardError.ReadToEndAsync(ct);
+                var stdoutTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+                var stderrTask = process.StandardError.ReadToEndAsync(timeoutCts.Token);
                 stdout = await stdoutTask;
                 await stderrTask;
-                await process.WaitForExitAsync(ct);
+                await process.WaitForExitAsync(timeoutCts.Token);
             }
             catch (OperationCanceledException)
             {

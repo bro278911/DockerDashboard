@@ -79,6 +79,11 @@ internal static class ComposeFileHelper
         if (buildFile != null)
             paths.Add(Path.Combine(directory, buildFile));
 
+        // docker compose config 會展開同目錄 .env，須納入快取失效判斷
+        var envFile = Path.Combine(directory, ".env");
+        if (File.Exists(envFile))
+            paths.Add(envFile);
+
         return paths;
     }
 

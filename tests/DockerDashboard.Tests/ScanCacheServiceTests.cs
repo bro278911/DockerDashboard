@@ -125,4 +125,16 @@ public sealed class ScanCacheServiceTests : IDisposable
         Assert.Equal(2, stamps.Count);
         Assert.All(stamps, s => Assert.True(s.MTimeUtcTicks > 0));
     }
+
+    [Fact]
+    public void GetStamps_IncludesEnvFile_WhenPresent()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "docker-compose.yml"), "services: {}");
+        File.WriteAllText(Path.Combine(_tempDir, ".env"), "PORT=8080");
+
+        var stamps = ScanCacheService.GetStamps(_tempDir);
+
+        Assert.Equal(2, stamps.Count);
+        Assert.Contains(stamps, s => s.Path.EndsWith(".env"));
+    }
 }

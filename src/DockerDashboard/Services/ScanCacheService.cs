@@ -123,6 +123,7 @@ public sealed class ScanCacheService
 
     public async Task SaveAsync()
     {
+        await _loadLock.WaitAsync();
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_cachePath)!);
@@ -133,6 +134,10 @@ public sealed class ScanCacheService
         catch
         {
             // 寫入失敗只損失快取效益，不影響功能
+        }
+        finally
+        {
+            _loadLock.Release();
         }
     }
 }

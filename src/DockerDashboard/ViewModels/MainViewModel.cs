@@ -186,7 +186,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ApplyWatchSettings(settings);
         RestoreWatchStateFromSettings(settings);
 
-        StatusMessage = IsDockerAvailable ? "就緒" : "⚠ Docker 未連線（清單為快取資料，狀態監控暫停）";
+        StatusMessage = IsDockerAvailable ? "就緒" : "⚠ Docker 未連線（顯示快取清單，連線恢復後自動更新）";
 
         // 背景靜默檢查更新，不阻塞啟動
         if (settings.AutoCheckUpdate)

@@ -98,6 +98,7 @@
 
                 <Button Style="{StaticResource MaterialDesignFlatButton}"
                         Command="{Binding PullAllImagesCommand}"
+                        IsEnabled="{Binding CanRebuild}"
                         ToolTip="拉取所有映像更新"
                         Foreground="#9C27B0">
                     <StackPanel Orientation="Horizontal">
@@ -267,7 +268,8 @@
                                             <Separator />
                                             <MenuItem Header="拉取映像更新"
                                                       Command="{Binding Data.ComposePullCommand, Source={StaticResource Proxy}}"
-                                                      CommandParameter="{Binding}">
+                                                      CommandParameter="{Binding}"
+                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Download" />
                                                 </MenuItem.Icon>
