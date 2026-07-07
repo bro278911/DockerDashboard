@@ -177,7 +177,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             Projects.Add(project);
             if (project.ComposeFiles.Count == 0)
-                StatusMessage = $"⚠ {project.Name} 中未偵測到服務（docker compose config 可能失敗）";
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {project.Name} 未偵測到服務（docker compose config 可能失敗）");
         }
 
         _monitor.Start(TimeSpan.FromSeconds(settings.PollIntervalSeconds));
@@ -273,7 +273,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             : "Docker Desktop";
     }
 
-    private async Task<DockerProject> BuildProjectAsync(string folderPath)
+    private async Task<DockerProject> BuildProjectAsync(string folderPath, bool useCache = true)
     {
         var project = new DockerProject
         {
@@ -281,7 +281,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             FolderPath = folderPath
         };
 
-        var composeFiles = await _scanner.ScanFolderAsync(folderPath);
+        var composeFiles = await _scanner.ScanFolderAsync(folderPath, useCache);
         foreach (var cf in composeFiles)
             project.ComposeFiles.Add(cf);
 

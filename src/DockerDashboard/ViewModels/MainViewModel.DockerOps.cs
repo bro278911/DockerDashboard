@@ -791,27 +791,13 @@ public partial class MainViewModel
         Projects.Clear();
 
         var results = await Task.WhenAll(
-            folders.Select(async folder =>
-            {
-                var project = new DockerProject
-                {
-                    Name = Path.GetFileName(folder),
-                    FolderPath = folder
-                };
-                if (Directory.Exists(folder))
-                {
-                    var composeFiles = await _scanner.ScanFolderAsync(folder, useCache: false);
-                    foreach (var cf in composeFiles)
-                        project.ComposeFiles.Add(cf);
-                }
-                return project;
-            }));
+            folders.Where(Directory.Exists).Select(f => BuildProjectAsync(f, useCache: false)));
 
         foreach (var project in results)
         {
             Projects.Add(project);
-            if (Directory.Exists(project.FolderPath) && project.ComposeFiles.Count == 0)
-                StatusMessage = $"⚠ {project.Name} 中未偵測到服務（docker compose config 可能失敗）";
+            if (project.ComposeFiles.Count == 0)
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {project.Name} 未偵測到服務（docker compose config 可能失敗）");
         }
 
         _watchService.ClearAll();
