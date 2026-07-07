@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using DockerDashboard.Models;
 
@@ -30,6 +31,7 @@ public sealed class ScanCacheService
     private readonly string _cachePath;
     private readonly ConcurrentDictionary<string, CachedDirectoryDto> _entries =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _loadLock = new(1, 1);
     private bool _loaded;
 
     public ScanCacheService() : this(DefaultCachePath) { }
@@ -95,10 +97,12 @@ public sealed class ScanCacheService
     public async Task LoadAsync()
     {
         if (_loaded) return;
-        _loaded = true;
-
+        await _loadLock.WaitAsync();
         try
         {
+            if (_loaded) return;
+            _loaded = true;
+
             if (!File.Exists(_cachePath)) return;
             var json = await File.ReadAllTextAsync(_cachePath);
             var data = JsonSerializer.Deserialize<Dictionary<string, CachedDirectoryDto>>(json);
@@ -110,6 +114,10 @@ public sealed class ScanCacheService
         {
             // 快取損毀時直接忽略，掃描會重建
             _entries.Clear();
+        }
+        finally
+        {
+            _loadLock.Release();
         }
     }
 
