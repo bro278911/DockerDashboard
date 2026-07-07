@@ -95,7 +95,7 @@ public class DockerCliService : IDockerCliService
     {
         try
         {
-            var (exitCode, _) = await RunCommandAsync("docker", ["version", "--format", "json"], null, ct);
+            var (exitCode, _) = await RunCommandAsync("docker", ["version", "--format", "json"], null, ct, TimeSpan.FromSeconds(10));
             return exitCode == 0;
         }
         catch
@@ -314,13 +314,13 @@ public class DockerCliService : IDockerCliService
     }
 
     private async Task<(int ExitCode, string Output)> RunCommandAsync(
-        string command, IEnumerable<string> args, string? workingDirectory, CancellationToken ct)
+        string command, IEnumerable<string> args, string? workingDirectory, CancellationToken ct, TimeSpan? timeout = null)
     {
         var psi = CreatePsi(command, args, workingDirectory);
 
         using var process = new Process { StartInfo = psi };
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(TimeSpan.FromMinutes(3));
+        timeoutCts.CancelAfter(timeout ?? TimeSpan.FromMinutes(3));
 
         process.Start();
 
