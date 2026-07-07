@@ -67,7 +67,7 @@
                         Command="{Binding AllUpBuildCommand}"
                         IsEnabled="{Binding CanAllUp}"
                         Foreground="#FF9800"
-                        ToolTip="強制重建所有 image（--no-cache，砍掉舊 image 從頭建，耗時較長）">
+                        ToolTip="強制重建所有 image（--no-cache --pull，重新拉取 base image 從頭建，耗時較長）">
                     <StackPanel Orientation="Horizontal">
                         <materialDesign:PackIcon Kind="Hammer" VerticalAlignment="Center" />
                         <TextBlock Text="完整重建" Margin="6,0,0,0" VerticalAlignment="Center" />
@@ -98,6 +98,7 @@
 
                 <Button Style="{StaticResource MaterialDesignFlatButton}"
                         Command="{Binding PullAllImagesCommand}"
+                        IsEnabled="{Binding CanRebuild}"
                         ToolTip="拉取所有映像更新"
                         Foreground="#9C27B0">
                     <StackPanel Orientation="Horizontal">
@@ -267,7 +268,8 @@
                                             <Separator />
                                             <MenuItem Header="拉取映像更新"
                                                       Command="{Binding Data.ComposePullCommand, Source={StaticResource Proxy}}"
-                                                      CommandParameter="{Binding}">
+                                                      CommandParameter="{Binding}"
+                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Download" />
                                                 </MenuItem.Icon>

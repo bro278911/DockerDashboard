@@ -23,31 +23,47 @@ public class ComposeFileScanner
         "compose.yaml"
     ];
 
-    public async Task<List<ComposeFile>> ScanFolderAsync(string folderPath)
+    private readonly ScanCacheService _cache;
+
+    public ComposeFileScanner(ScanCacheService cache) => _cache = cache;
+
+    public async Task<List<ComposeFile>> ScanFolderAsync(string folderPath, bool useCache = true)
     {
-        var results = new List<ComposeFile>();
-
         if (!Directory.Exists(folderPath))
-            return results;
+            return [];
 
-        ComposeFileHelper.ClearCache();
-        var seenDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await _cache.LoadAsync();
 
-        foreach (var directory in EnumerateComposeDirectories(folderPath))
+        var directories = EnumerateComposeDirectories(folderPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(d => FindMainComposeFile(d) != null)
+            .ToList();
+
+        // docker compose config 每次 spawn 0.5~2 秒，目錄間平行化
+        using var semaphore = new SemaphoreSlim(4);
+        var results = await Task.WhenAll(directories.Select(async directory =>
         {
-            if (!seenDirectories.Add(directory))
-                continue;
+            var stamps = ScanCacheService.GetStamps(directory);
+            if (useCache && _cache.TryGet(directory, stamps) is { } cached)
+                return cached;
 
-            var mainComposePath = FindMainComposeFile(directory);
-            if (mainComposePath == null)
-                continue;
+            await semaphore.WaitAsync();
+            try
+            {
+                var mainComposePath = FindMainComposeFile(directory)!;
+                var composeFile = await ParseWithDockerCliAsync(mainComposePath) ?? ParseManually(mainComposePath);
+                if (composeFile != null)
+                    _cache.Store(directory, stamps, composeFile);
+                return composeFile;
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        }));
 
-            var composeFile = await ParseWithDockerCliAsync(mainComposePath) ?? ParseManually(mainComposePath);
-            if (composeFile != null)
-                results.Add(composeFile);
-        }
-
-        return results;
+        await _cache.SaveAsync();
+        return results.OfType<ComposeFile>().ToList();
     }
 
     // docker compose config --format json 自動解析變數、anchor、merge key、多檔合併

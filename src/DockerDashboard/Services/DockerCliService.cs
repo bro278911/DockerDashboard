@@ -95,60 +95,13 @@ public class DockerCliService : IDockerCliService
     {
         try
         {
-            var (exitCode, _) = await RunCommandAsync("docker", ["version", "--format", "json"], null, ct);
+            var (exitCode, _) = await RunCommandAsync("docker", ["version", "--format", "json"], null, ct, TimeSpan.FromSeconds(10));
             return exitCode == 0;
         }
         catch
         {
             return false;
         }
-    }
-
-    public async Task<(int ExitCode, string Output)> ComposeUpAsync(
-        string workingDirectory, string? serviceName = null, CancellationToken ct = default)
-    {
-        var args = BuildComposeArgs(workingDirectory, ["up", "-d", "--build", "--remove-orphans"]);
-        if (!string.IsNullOrEmpty(serviceName))
-            args.Add(serviceName);
-
-        return await RunCommandAsync(ComposeCommand, args, workingDirectory, ct);
-    }
-
-    public async Task<(int ExitCode, string Output)> ComposeDownAsync(
-        string workingDirectory, CancellationToken ct = default)
-    {
-        var args = BuildComposeArgs(workingDirectory, ["down", "--remove-orphans"]);
-        return await RunCommandAsync(ComposeCommand, args, workingDirectory, ct);
-    }
-
-    public async Task<(int ExitCode, string Output)> ComposeRestartAsync(
-        string workingDirectory, string? serviceName = null, CancellationToken ct = default)
-    {
-        var args = BuildComposeArgs(workingDirectory, ["restart"]);
-        if (!string.IsNullOrEmpty(serviceName))
-            args.Add(serviceName);
-
-        return await RunCommandAsync(ComposeCommand, args, workingDirectory, ct);
-    }
-
-    public async Task<(int ExitCode, string Output)> ComposeStopAsync(
-        string workingDirectory, string? serviceName = null, CancellationToken ct = default)
-    {
-        var args = BuildComposeArgs(workingDirectory, ["stop"]);
-        if (!string.IsNullOrEmpty(serviceName))
-            args.Add(serviceName);
-
-        return await RunCommandAsync(ComposeCommand, args, workingDirectory, ct);
-    }
-
-    public async Task<(int ExitCode, string Output)> ComposeStartAsync(
-        string workingDirectory, string? serviceName = null, CancellationToken ct = default)
-    {
-        var args = BuildComposeArgs(workingDirectory, ["start"]);
-        if (!string.IsNullOrEmpty(serviceName))
-            args.Add(serviceName);
-
-        return await RunCommandAsync(ComposeCommand, args, workingDirectory, ct);
     }
 
     public async Task<List<ContainerInfo>> GetRunningContainersAsync(CancellationToken ct = default)
@@ -159,16 +112,18 @@ public class DockerCliService : IDockerCliService
             var psi = CreatePsi("docker", ["ps", "-a", "--format", "{{json .}}"], null);
 
             using var process = new Process { StartInfo = psi };
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
             process.Start();
 
             string stdout;
             try
             {
-                var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
-                var stderrTask = process.StandardError.ReadToEndAsync(ct);
+                var stdoutTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+                var stderrTask = process.StandardError.ReadToEndAsync(timeoutCts.Token);
                 stdout = await stdoutTask;
                 await stderrTask;
-                await process.WaitForExitAsync(ct);
+                await process.WaitForExitAsync(timeoutCts.Token);
             }
             catch (OperationCanceledException)
             {
@@ -249,16 +204,6 @@ public class DockerCliService : IDockerCliService
         return args;
     }
 
-    public async Task<(int ExitCode, string Output)> ComposeUpWithLogAsync(
-        string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default)
-    {
-        var args = BuildComposeArgs(workingDirectory, ["up", "-d", "--build", "--remove-orphans"]);
-        if (!string.IsNullOrEmpty(serviceName))
-            args.Add(serviceName);
-
-        return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
-    }
-
     public async Task<(int ExitCode, string Output)> ComposeUpFastWithLogAsync(
         string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default)
     {
@@ -303,7 +248,7 @@ public class DockerCliService : IDockerCliService
     public async Task<(int ExitCode, string Output)> ComposeForceRebuildWithLogAsync(
         string workingDirectory, Action<string> onOutput, CancellationToken ct = default)
     {
-        var buildArgs = BuildComposeArgs(workingDirectory, ["build", "--no-cache"]);
+        var buildArgs = BuildComposeArgs(workingDirectory, ["build", "--no-cache", "--pull"]);
         var (buildExit, _) = await RunCommandWithLogAsync(
             ComposeCommand, buildArgs, workingDirectory, onOutput, ct, withBuildEnv: true);
         if (buildExit != 0)
@@ -311,16 +256,6 @@ public class DockerCliService : IDockerCliService
 
         var upArgs = BuildComposeArgs(workingDirectory, ["up", "-d", "--remove-orphans"]);
         return await RunCommandWithLogAsync(ComposeCommand, upArgs, workingDirectory, onOutput, ct);
-    }
-
-    public async Task<(int ExitCode, string Output)> ComposeStartWithLogAsync(
-        string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default)
-    {
-        var args = BuildComposeArgs(workingDirectory, ["start"]);
-        if (!string.IsNullOrEmpty(serviceName))
-            args.Add(serviceName);
-
-        return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
     }
 
     public async Task<(int ExitCode, string Output)> ComposeStopWithLogAsync(
@@ -331,16 +266,6 @@ public class DockerCliService : IDockerCliService
             args.Add(serviceName);
 
         return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
-    }
-
-    public async Task<(int ExitCode, string Output)> ComposePullAsync(
-        string workingDirectory, string? serviceName = null, CancellationToken ct = default)
-    {
-        var args = BuildComposeArgs(workingDirectory, ["pull"]);
-        if (!string.IsNullOrEmpty(serviceName))
-            args.Add(serviceName);
-
-        return await RunCommandAsync(ComposeCommand, args, workingDirectory, ct);
     }
 
     public async Task<(int ExitCode, string Output)> ComposePullWithLogAsync(
@@ -381,10 +306,6 @@ public class DockerCliService : IDockerCliService
         Action<string> onOutput, CancellationToken ct = default)
         => RunCommandWithLogAsync("docker", ["volume", "prune", "-f"], null, onOutput, ct);
 
-    public Task<(int ExitCode, string Output)> DockerNetworkPruneAsync(
-        Action<string> onOutput, CancellationToken ct = default)
-        => RunCommandWithLogAsync("docker", ["network", "prune", "-f"], null, onOutput, ct);
-
     public Task<(int ExitCode, string Output)> DockerSystemPruneAsync(
         bool all, bool includeVolumes, Action<string> onOutput, CancellationToken ct = default)
     {
@@ -395,13 +316,13 @@ public class DockerCliService : IDockerCliService
     }
 
     private async Task<(int ExitCode, string Output)> RunCommandAsync(
-        string command, IEnumerable<string> args, string? workingDirectory, CancellationToken ct)
+        string command, IEnumerable<string> args, string? workingDirectory, CancellationToken ct, TimeSpan? timeout = null)
     {
         var psi = CreatePsi(command, args, workingDirectory);
 
         using var process = new Process { StartInfo = psi };
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(TimeSpan.FromMinutes(3));
+        timeoutCts.CancelAfter(timeout ?? TimeSpan.FromMinutes(3));
 
         process.Start();
 

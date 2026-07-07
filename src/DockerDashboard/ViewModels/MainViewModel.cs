@@ -154,11 +154,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 IsDockerAvailable = await TryConnectDockerAsync(settings.DockerMode);
             }
 
-            if (!IsDockerAvailable)
-            {
-                StatusMessage = "⚠ Docker 未啟動或未安裝（請檢查設定）";
-                return;
-            }
+            // Docker 不可用仍繼續：掃描有快取與 YAML fallback，清單不依賴 daemon
         }
 
         foreach (var folder in settings.RecentlyRemovedFolders)
@@ -181,7 +177,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             Projects.Add(project);
             if (project.ComposeFiles.Count == 0)
-                StatusMessage = $"⚠ {project.Name} 中未偵測到服務（docker compose config 可能失敗）";
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {project.Name} 未偵測到服務（docker compose config 可能失敗）");
         }
 
         _monitor.Start(TimeSpan.FromSeconds(settings.PollIntervalSeconds));
@@ -190,7 +186,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ApplyWatchSettings(settings);
         RestoreWatchStateFromSettings(settings);
 
-        StatusMessage = "就緒";
+        StatusMessage = IsDockerAvailable ? "就緒" : "⚠ Docker 未連線（顯示快取清單，連線恢復後自動更新）";
 
         // 背景靜默檢查更新，不阻塞啟動
         if (settings.AutoCheckUpdate)
@@ -277,7 +273,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             : "Docker Desktop";
     }
 
-    private async Task<DockerProject> BuildProjectAsync(string folderPath)
+    private async Task<DockerProject> BuildProjectAsync(string folderPath, bool useCache = true)
     {
         var project = new DockerProject
         {
@@ -285,7 +281,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             FolderPath = folderPath
         };
 
-        var composeFiles = await _scanner.ScanFolderAsync(folderPath);
+        var composeFiles = await _scanner.ScanFolderAsync(folderPath, useCache);
         foreach (var cf in composeFiles)
             project.ComposeFiles.Add(cf);
 

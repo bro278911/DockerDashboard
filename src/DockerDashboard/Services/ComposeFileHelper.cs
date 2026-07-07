@@ -63,15 +63,28 @@ internal static class ComposeFileHelper
         return [.. args];
     }
 
-    public static void InvalidateCache(string directory)
+    public static List<string> GetComposeFilePaths(string directory)
     {
-        if (string.IsNullOrWhiteSpace(directory)) return;
-        ComposeFileArgsCache.TryRemove(Path.GetFullPath(directory), out _);
-    }
+        var paths = new List<string>();
+        var mainFile = System.Array.Find(MainFiles, f => File.Exists(Path.Combine(directory, f)));
+        if (mainFile == null) return paths;
 
-    public static void ClearCache()
-    {
-        ComposeFileArgsCache.Clear();
+        paths.Add(Path.Combine(directory, mainFile));
+
+        var overrideFile = System.Array.Find(OverrideFiles, f => File.Exists(Path.Combine(directory, f)));
+        if (overrideFile != null)
+            paths.Add(Path.Combine(directory, overrideFile));
+
+        var buildFile = System.Array.Find(BuildFiles, f => File.Exists(Path.Combine(directory, f)));
+        if (buildFile != null)
+            paths.Add(Path.Combine(directory, buildFile));
+
+        // docker compose config 會展開同目錄 .env，須納入快取失效判斷
+        var envFile = Path.Combine(directory, ".env");
+        if (File.Exists(envFile))
+            paths.Add(envFile);
+
+        return paths;
     }
 
     private readonly record struct CacheEntry(long DirectoryStampUtcTicks, string[] Args);
