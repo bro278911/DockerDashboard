@@ -82,16 +82,5 @@ internal static class ComposeFileHelper
         return paths;
     }
 
-    public static void InvalidateCache(string directory)
-    {
-        if (string.IsNullOrWhiteSpace(directory)) return;
-        ComposeFileArgsCache.TryRemove(Path.GetFullPath(directory), out _);
-    }
-
-    public static void ClearCache()
-    {
-        ComposeFileArgsCache.Clear();
-    }
-
     private readonly record struct CacheEntry(long DirectoryStampUtcTicks, string[] Args);
 }

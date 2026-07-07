@@ -800,7 +800,7 @@ public partial class MainViewModel
                 };
                 if (Directory.Exists(folder))
                 {
-                    var composeFiles = await _scanner.ScanFolderAsync(folder);
+                    var composeFiles = await _scanner.ScanFolderAsync(folder, useCache: false);
                     foreach (var cf in composeFiles)
                         project.ComposeFiles.Add(cf);
                 }

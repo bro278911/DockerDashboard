@@ -26,6 +26,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<DockerCliService>();
         services.AddSingleton<IDockerCliService>(sp => sp.GetRequiredService<DockerCliService>());
         services.AddSingleton<IGitService, GitService>();
+        services.AddSingleton<ScanCacheService>();
         services.AddSingleton<ComposeFileScanner>();
         services.AddSingleton<SettingsService>();
         services.AddSingleton<ContainerMonitorService>();
