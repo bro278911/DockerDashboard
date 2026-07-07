@@ -701,18 +701,30 @@ public partial class MainViewModel
     private async Task ComposePullAsync(ComposeFile? compose)
     {
         if (compose == null) return;
+
+        var cts = new CancellationTokenSource();
+        _operationCts?.Dispose();
+        _operationCts = cts;
+        var ct = cts.Token;
+
         IsOperating = true;
+        IsCancelling = false;
         StatusMessage = $"正在拉取 {compose.FileName} 映像...";
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ⬇ 拉取映像 {compose.FileName}");
 
+        bool wasCancelled = false;
         try
         {
-            var (exitCode, _) = await _dockerCli.ComposePullWithLogAsync(compose.DirectoryPath, AppendLog);
+            var (exitCode, _) = await _dockerCli.ComposePullWithLogAsync(compose.DirectoryPath, AppendLog, ct: ct);
             if (exitCode == 0)
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 映像拉取完成");
             else
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {compose.FileName} 映像拉取失敗");
             StatusMessage = exitCode == 0 ? $"✅ {compose.FileName} 映像已更新" : $"⚠ {compose.FileName} 映像拉取失敗";
+        }
+        catch (OperationCanceledException)
+        {
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
         }
         catch (Exception ex)
         {
@@ -721,8 +733,16 @@ public partial class MainViewModel
         }
         finally
         {
+            wasCancelled = cts.IsCancellationRequested;
+            if (ReferenceEquals(_operationCts, cts))
+                _operationCts = null;
+            cts.Dispose();
+            IsCancelling = false;
             IsOperating = false;
         }
+
+        if (wasCancelled)
+            StatusMessage = "⏹ 操作已取消";
     }
 
     [RelayCommand]
@@ -734,36 +754,69 @@ public partial class MainViewModel
             return;
         }
 
+        var cts = new CancellationTokenSource();
+        _operationCts?.Dispose();
+        _operationCts = cts;
+        var ct = cts.Token;
+
         IsOperating = true;
+        IsCancelling = false;
         StatusMessage = "正在拉取所有映像...";
+        LogLines.Clear();
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ⬇ 拉取所有映像（並行）");
 
         var composeFiles = Projects.SelectMany(p => p.ComposeFiles).ToList();
         var errors = new ConcurrentBag<string>();
+        var maxParallel = Math.Clamp(_batchStartupParallelism, 1, 8);
+        using var semaphore = new SemaphoreSlim(maxParallel);
 
         var tasks = composeFiles.Select(async compose =>
         {
+            try { await semaphore.WaitAsync(ct); }
+            catch (OperationCanceledException) { return; }
             try
             {
-                var (exitCode, _) = await _dockerCli.ComposePullWithLogAsync(compose.DirectoryPath, AppendLog);
-                if (exitCode != 0) errors.Add(compose.FileName);
-                else AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 映像拉取完成");
+                if (ct.IsCancellationRequested) return;
+                var (exitCode, _) = await _dockerCli.ComposePullWithLogAsync(
+                    compose.DirectoryPath, AppendLog, ct: ct);
+                if (ct.IsCancellationRequested)
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
+                else if (exitCode != 0)
+                    errors.Add(compose.FileName);
+                else
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 映像拉取完成");
+            }
+            catch (OperationCanceledException)
+            {
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
             }
             catch (Exception ex)
             {
                 errors.Add($"{compose.FileName}: {ex.Message}");
+                AppendLog($"[例外] {ex.Message}");
             }
+            finally { semaphore.Release(); }
         });
 
+        bool wasCancelled = false;
         try
         {
             await Task.WhenAll(tasks);
         }
         finally
         {
+            wasCancelled = cts.IsCancellationRequested;
+            if (ReferenceEquals(_operationCts, cts))
+                _operationCts = null;
+            cts.Dispose();
+            IsCancelling = false;
             IsOperating = false;
         }
-        StatusMessage = errors.IsEmpty ? "✅ 所有映像已更新" : $"⚠ {errors.Count} 個映像拉取失敗";
+
+        if (wasCancelled)
+            StatusMessage = "⏹ 操作已取消";
+        else
+            StatusMessage = errors.IsEmpty ? "✅ 所有映像已更新" : $"⚠ {errors.Count} 個映像拉取失敗";
     }
 
     [RelayCommand]
