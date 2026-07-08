@@ -359,23 +359,29 @@ public class DockerCliService : IDockerCliService
         return (process.ExitCode, combined);
     }
 
-    // withBuildEnv=true 時設定 BUILDKIT_MAX_PARALLELISM，避免平行 build 資源競爭
+    public static Dictionary<string, string> GetBuildEnv(int buildKitParallelism)
+    {
+        var env = new Dictionary<string, string> { ["COMPOSE_BAKE"] = "true" };
+        if (buildKitParallelism > 0)
+            env["BUILDKIT_MAX_PARALLELISM"] = buildKitParallelism.ToString();
+        return env;
+    }
+
+    // withBuildEnv=true 時設定 COMPOSE_BAKE 與 BUILDKIT_MAX_PARALLELISM
     private async Task<(int ExitCode, string Output)> RunCommandWithLogAsync(
         string command, IEnumerable<string> args, string? workingDirectory,
         Action<string> onOutput, CancellationToken ct, bool withBuildEnv = false)
     {
         IReadOnlyDictionary<string, string>? wslEnvOverrides = null;
-        if (withBuildEnv && IsWsl2 && BuildKitParallelism > 0)
-            wslEnvOverrides = new Dictionary<string, string>
-            {
-                ["BUILDKIT_MAX_PARALLELISM"] = BuildKitParallelism.ToString()
-            };
+        if (withBuildEnv && IsWsl2)
+            wslEnvOverrides = GetBuildEnv(BuildKitParallelism);
 
         var psi = CreatePsi(command, args, workingDirectory, wslEnvOverrides);
         psi.Environment["DOCKER_BUILDKIT"] = "1";
         psi.Environment["COMPOSE_DOCKER_CLI_BUILD"] = "1";
-        if (withBuildEnv && !IsWsl2 && BuildKitParallelism > 0)
-            psi.Environment["BUILDKIT_MAX_PARALLELISM"] = BuildKitParallelism.ToString();
+        if (withBuildEnv && !IsWsl2)
+            foreach (var kv in GetBuildEnv(BuildKitParallelism))
+                psi.Environment[kv.Key] = kv.Value;
 
         using var process = new Process { StartInfo = psi };
         var output = new StringBuilder();
