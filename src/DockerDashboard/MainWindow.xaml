@@ -233,7 +233,8 @@
                                             <Separator />
                                             <MenuItem Header="移除專案"
                                                       Command="{Binding Data.RemoveProjectCommand, Source={StaticResource Proxy}}"
-                                                      CommandParameter="{Binding}">
+                                                      CommandParameter="{Binding}"
+                                                      IsEnabled="{Binding Data.CanRemoveProject, Source={StaticResource Proxy}}">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Delete" />
                                                 </MenuItem.Icon>

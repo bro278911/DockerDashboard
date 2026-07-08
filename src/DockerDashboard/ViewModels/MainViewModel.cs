@@ -57,6 +57,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(CanAllDown))]
     [NotifyPropertyChangedFor(nameof(CanRebuild))]
     [NotifyPropertyChangedFor(nameof(CanCancelOperation))]
+    [NotifyPropertyChangedFor(nameof(CanRemoveProject))]
     private bool _isOperating;
 
     [ObservableProperty]
@@ -81,6 +82,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public bool CanRebuild => !IsOperating && TotalCount > 0;
     public bool CanAllDown => !IsOperating && RunningCount > 0;
     public bool CanCancelOperation => IsOperating && !IsCancelling;
+    public bool CanRemoveProject => !IsOperating;
 
     [ObservableProperty]
     private string _statusMessage = "就緒";
