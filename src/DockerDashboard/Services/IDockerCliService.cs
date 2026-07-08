@@ -21,6 +21,8 @@ public interface IDockerCliService
 
     ProcessStream StartComposeLogStream(string workingDirectory, string serviceName);
 
+    ProcessStream StartComposeWatch(string workingDirectory, IEnumerable<string> serviceNames);
+
     Task<(int ExitCode, string Output)> ComposeUpFastWithLogAsync(
         string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default);
 

@@ -10,6 +10,7 @@ public sealed class ProcessStream : IDisposable
 
     public StreamReader StandardOutput => _process.StandardOutput;
     public StreamReader StandardError => _process.StandardError;
+    public int ExitCode => _process.ExitCode;
 
     internal ProcessStream(Process process) => _process = process;
 

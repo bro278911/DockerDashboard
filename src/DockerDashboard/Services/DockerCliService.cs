@@ -210,6 +210,17 @@ public class DockerCliService : IDockerCliService
         return new ProcessStream(process);
     }
 
+    public ProcessStream StartComposeWatch(string workingDirectory, IEnumerable<string> serviceNames)
+    {
+        var args = BuildComposeArgs(workingDirectory, ["watch", "--no-up"]);
+        args.AddRange(serviceNames);
+        var psi = CreatePsi(ComposeCommand, args, workingDirectory);
+
+        var process = new Process { StartInfo = psi };
+        process.Start();
+        return new ProcessStream(process);
+    }
+
     private List<string> BuildComposeArgs(string workingDirectory, IEnumerable<string> commandArgs)
     {
         var args = new List<string>(ComposeArgs);
