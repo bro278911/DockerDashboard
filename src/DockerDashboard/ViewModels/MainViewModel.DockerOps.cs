@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DockerDashboard.Models;
+using DockerDashboard.Services;
 using Microsoft.Win32;
 using Application = System.Windows.Application;
 
@@ -854,6 +855,7 @@ public partial class MainViewModel
         }
 
         _watchService.ClearAll();
+        _composeWatch.ClearAll();
         var settings = await _settingsService.LoadAsync();
         RestoreWatchStateFromSettings(settings);
 
@@ -868,12 +870,34 @@ public partial class MainViewModel
 
         service.IsWatching = !service.IsWatching;
 
-        if (service.IsWatching)
+        if (DockerCliService.IsWslUncPath(service.WorkingDirectory))
+        {
+            UpdateComposeWatchForDirectory(service.WorkingDirectory);
+        }
+        else if (service.IsWatching)
+        {
             _watchService.AddWatch(service.WorkingDirectory, service.Name);
+        }
         else
+        {
             _watchService.RemoveWatch(service.WorkingDirectory, service.Name);
+        }
 
         await SaveSettingsAsync();
+    }
+
+    private void UpdateComposeWatchForDirectory(string workingDirectory)
+    {
+        var watched = Projects
+            .SelectMany(p => p.ComposeFiles)
+            .SelectMany(c => c.Services)
+            .Where(s => s.IsWatching &&
+                        string.Equals(s.WorkingDirectory, workingDirectory, StringComparison.OrdinalIgnoreCase))
+            .Select(s => s.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        _composeWatch.SetWatchedServices(workingDirectory, watched);
     }
 
     [RelayCommand]

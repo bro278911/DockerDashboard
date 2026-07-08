@@ -25,6 +25,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly SettingsService _settingsService;
     private readonly ContainerMonitorService _monitor;
     private readonly WatchRebuildService _watchService;
+    private readonly ComposeWatchService _composeWatch;
     private readonly UpdateService _updateService;
     private Forms.NotifyIcon? _notifyIcon;
     private readonly ConcurrentQueue<string> _pendingLogQueue = new();
@@ -98,6 +99,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         SettingsService settingsService,
         ContainerMonitorService monitor,
         WatchRebuildService watchService,
+        ComposeWatchService composeWatch,
         UpdateService updateService)
     {
         _dockerCli = dockerCli;
@@ -106,11 +108,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _settingsService = settingsService;
         _monitor = monitor;
         _watchService = watchService;
+        _composeWatch = composeWatch;
         _updateService = updateService;
 
         _monitor.ContainersUpdated += OnContainersUpdated;
         _monitor.ContainerCrashed += OnContainerCrashed;
         _watchService.SetRebuildCallback(OnAutoRebuildTriggeredAsync);
+        _composeWatch.OnOutput = AppendLog;
+        _composeWatch.OnProcessExited = OnComposeWatchExited;
 
         LogView = CollectionViewSource.GetDefaultView(LogLines);
         LogView.Filter = LogFilterPredicate;
@@ -224,6 +229,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     internal void RestoreWatchStateFromSettings(AppSettings settings)
     {
+        var wslDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var project in Projects)
         {
             foreach (var compose in project.ComposeFiles)
@@ -231,11 +237,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 foreach (var service in compose.Services)
                 {
                     service.IsWatching = settings.WatchEnabledServiceKeys.Contains(service.WatchKey);
-                    if (service.IsWatching)
+                    if (!service.IsWatching) continue;
+
+                    if (DockerCliService.IsWslUncPath(service.WorkingDirectory))
+                        wslDirs.Add(service.WorkingDirectory);
+                    else
                         _watchService.AddWatch(service.WorkingDirectory, service.Name);
                 }
             }
         }
+
+        foreach (var dir in wslDirs)
+            UpdateComposeWatchForDirectory(dir);
     }
 
     private async Task OnAutoRebuildTriggeredAsync(string workingDirectory, string serviceName)
@@ -258,6 +271,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             await _monitor.ForceRefreshAsync();
         }
+    }
+
+    private void OnComposeWatchExited(string workingDirectory, int exitCode)
+    {
+        _ = Application.Current?.Dispatcher.InvokeAsync(async () =>
+        {
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ compose watch 異常退出 (exit code: {exitCode})：{workingDirectory}，已關閉該專案的 Auto Watch");
+            foreach (var project in Projects)
+                foreach (var compose in project.ComposeFiles)
+                    foreach (var service in compose.Services)
+                        if (string.Equals(service.WorkingDirectory, workingDirectory, StringComparison.OrdinalIgnoreCase))
+                            service.IsWatching = false;
+            await SaveSettingsAsync();
+        });
     }
 
     internal void ApplyDockerModeSettings(AppSettings settings)
@@ -500,6 +527,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _monitor.ContainerCrashed -= OnContainerCrashed;
         _monitor.Dispose();
         _watchService.Dispose();
+        _composeWatch.Dispose();
         GC.SuppressFinalize(this);
     }
 }
