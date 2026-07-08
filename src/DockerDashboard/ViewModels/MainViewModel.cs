@@ -31,6 +31,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ConcurrentQueue<string> _pendingLogQueue = new();
     private int _isLogFlushScheduled;
     private int _batchStartupParallelism = 3;
+    private bool _autoWatchEnabled;
     private CancellationTokenSource? _operationCts;
 
     public ObservableCollection<DockerProject> Projects { get; } = [];
@@ -225,6 +226,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _watchService.IsEnabled = settings.AutoWatchEnabled;
         _watchService.DebounceDelay = TimeSpan.FromSeconds(settings.WatchDebounceSeconds);
         _batchStartupParallelism = Math.Clamp(settings.StartupParallelism, 1, 8);
+        _autoWatchEnabled = settings.AutoWatchEnabled;
     }
 
     internal void RestoreWatchStateFromSettings(AppSettings settings)

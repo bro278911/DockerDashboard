@@ -214,7 +214,13 @@ public class DockerCliService : IDockerCliService
     {
         var args = BuildComposeArgs(workingDirectory, ["watch", "--no-up"]);
         args.AddRange(serviceNames);
-        var psi = CreatePsi(ComposeCommand, args, workingDirectory);
+
+        // watch 子程序內會觸發 rebuild，須同樣注入 build env
+        var buildEnv = GetBuildEnv(BuildKitParallelism);
+        var psi = CreatePsi(ComposeCommand, args, workingDirectory, IsWsl2 ? buildEnv : null);
+        if (!IsWsl2)
+            foreach (var kv in buildEnv)
+                psi.Environment[kv.Key] = kv.Value;
 
         var process = new Process { StartInfo = psi };
         process.Start();

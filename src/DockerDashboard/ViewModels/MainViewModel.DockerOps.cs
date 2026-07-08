@@ -833,6 +833,16 @@ public partial class MainViewModel
         }
 
         Projects.Remove(project);
+
+        var removedServices = project.ComposeFiles.SelectMany(c => c.Services).ToList();
+        foreach (var service in removedServices.Where(s => s.IsWatching && !DockerCliService.IsWslUncPath(s.WorkingDirectory)))
+            _watchService.RemoveWatch(service.WorkingDirectory, service.Name);
+        foreach (var dir in removedServices
+                     .Where(s => DockerCliService.IsWslUncPath(s.WorkingDirectory))
+                     .Select(s => s.WorkingDirectory)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+            UpdateComposeWatchForDirectory(dir);
+
         await SaveSettingsAsync();
         UpdateCounts();
         StatusMessage = $"已移除 {project.Name}";
@@ -897,6 +907,9 @@ public partial class MainViewModel
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        if (!_autoWatchEnabled)
+            watched = [];
+
         _composeWatch.SetWatchedServices(workingDirectory, watched);
     }
 
@@ -940,6 +953,17 @@ public partial class MainViewModel
             await _settingsService.SaveAsync(settings);
             ApplyDockerModeSettings(settings);
             ApplyWatchSettings(settings);
+
+            var wslDirs = Projects
+                .SelectMany(p => p.ComposeFiles)
+                .SelectMany(c => c.Services)
+                .Where(s => DockerCliService.IsWslUncPath(s.WorkingDirectory))
+                .Select(s => s.WorkingDirectory)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            foreach (var dir in wslDirs)
+                UpdateComposeWatchForDirectory(dir);
+
             await _monitor.StopAsync();
             _monitor.Start(TimeSpan.FromSeconds(settings.PollIntervalSeconds));
             StatusMessage = "設定已儲存並套用";
