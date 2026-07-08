@@ -829,17 +829,27 @@ public partial class MainViewModel
             .ToList();
         if (runningComposes.Count > 0 && IsDockerAvailable)
         {
+            var cts = new CancellationTokenSource();
+            _operationCts?.Dispose();
+            _operationCts = cts;
+            var ct = cts.Token;
+
             IsOperating = true;
+            IsCancelling = false;
             StatusMessage = $"正在停止 {project.Name} 的服務...";
             try
             {
                 foreach (var compose in runningComposes)
                 {
                     AppendLog($"[{DateTime.Now:HH:mm:ss}] ■ 停止 {compose.FileName}");
-                    var (exitCode, _) = await _dockerCli.ComposeStopWithLogAsync(compose.DirectoryPath, AppendLog);
+                    var (exitCode, _) = await _dockerCli.ComposeStopWithLogAsync(compose.DirectoryPath, AppendLog, null, ct);
                     if (exitCode != 0)
                         AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {compose.FileName} 停止失敗 (exit code: {exitCode})，仍繼續移除");
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ 停止已取消，仍繼續移除");
             }
             catch (Exception ex)
             {
@@ -847,6 +857,10 @@ public partial class MainViewModel
             }
             finally
             {
+                if (ReferenceEquals(_operationCts, cts))
+                    _operationCts = null;
+                cts.Dispose();
+                IsCancelling = false;
                 IsOperating = false;
             }
         }
