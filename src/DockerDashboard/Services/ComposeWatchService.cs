@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -74,9 +75,10 @@ public class ComposeWatchService : IDisposable
             var stderrTask = PumpReaderAsync(entry.Stream.StandardError, name);
             await Task.WhenAll(stdoutTask, stderrTask);
         }
-        catch
+        catch (Exception ex)
         {
-            // 程序被 Kill 時 reader 可能拋出，屬預期
+            // 程序被 Kill 時 reader 拋出屬預期；其他例外記錄後不中斷清理
+            Debug.WriteLine($"[ComposeWatch] PumpAsync 例外: {ex.Message}");
         }
 
         bool wasStopped;
@@ -92,7 +94,10 @@ public class ComposeWatchService : IDisposable
         entry.Stream.Dispose();
 
         if (!wasStopped)
-            OnProcessExited?.Invoke(workingDirectory, exitCode);
+        {
+            try { OnProcessExited?.Invoke(workingDirectory, exitCode); }
+            catch (Exception ex) { Debug.WriteLine($"[ComposeWatch] OnProcessExited 處理例外: {ex.Message}"); }
+        }
     }
 
     private async Task PumpReaderAsync(StreamReader reader, string name)
