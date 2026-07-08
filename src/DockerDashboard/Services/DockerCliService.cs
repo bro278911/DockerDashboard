@@ -25,17 +25,31 @@ public class DockerCliService : IDockerCliService
 
     private bool IsWsl2 => DockerMode == DockerMode.Wsl2;
 
+    private static readonly Regex WslUncRegex = new(
+        @"^[\\/]{2}wsl(\$|\.localhost)[\\/]([^\\/]+)([\\/].*)?$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     public static string ConvertToWslPath(string windowsPath)
     {
         if (string.IsNullOrEmpty(windowsPath)) return windowsPath;
+
+        var uncMatch = WslUncRegex.Match(windowsPath);
+        if (uncMatch.Success)
+        {
+            var rest = uncMatch.Groups[3].Value.Replace('\\', '/');
+            return rest.Length == 0 ? "/" : rest;
+        }
 
         var match = Regex.Match(windowsPath, @"^([A-Za-z]):[\\\/](.*)$");
         if (!match.Success) return windowsPath;
 
         var drive = match.Groups[1].Value.ToLowerInvariant();
-        var rest = match.Groups[2].Value.Replace('\\', '/');
-        return $"/mnt/{drive}/{rest}";
+        var rest2 = match.Groups[2].Value.Replace('\\', '/');
+        return $"/mnt/{drive}/{rest2}";
     }
+
+    public static bool IsWslUncPath(string path) =>
+        !string.IsNullOrEmpty(path) && WslUncRegex.IsMatch(path);
 
     private ProcessStartInfo CreatePsi(
         string command,
