@@ -11,6 +11,7 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
     private Forms.NotifyIcon? _notifyIcon;
+    private bool _isExiting;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -19,7 +20,9 @@ public partial class MainWindow : Window
         DataContext = _viewModel;
         Loaded += OnLoaded;
         Closed += OnClosed;
-        StateChanged += OnStateChanged;
+        Closing += OnClosing;
+        // 系統登出/關機時不可取消關閉，否則會擋住 Windows 關機
+        System.Windows.Application.Current.SessionEnding += (_, _) => _isExiting = true;
         InitializeTrayIcon();
         _viewModel.SetNotifyIcon(_notifyIcon);
     }
@@ -44,6 +47,7 @@ public partial class MainWindow : Window
         contextMenu.Items.Add(new Forms.ToolStripSeparator());
         contextMenu.Items.Add("結束", null, (_, _) =>
         {
+            _isExiting = true;
             _notifyIcon.Visible = false;
             System.Windows.Application.Current.Shutdown();
         });
@@ -51,14 +55,15 @@ public partial class MainWindow : Window
         _notifyIcon.DoubleClick += (_, _) => RestoreFromTray();
     }
 
-    private void OnStateChanged(object? sender, System.EventArgs e)
+    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        if (WindowState == WindowState.Minimized)
-        {
-            Hide();
-            if (_notifyIcon != null)
-                _notifyIcon.Visible = true;
-        }
+        if (_isExiting)
+            return;
+
+        e.Cancel = true;
+        Hide();
+        if (_notifyIcon != null)
+            _notifyIcon.Visible = true;
     }
 
     private void RestoreFromTray()
