@@ -25,17 +25,31 @@ public class DockerCliService : IDockerCliService
 
     private bool IsWsl2 => DockerMode == DockerMode.Wsl2;
 
+    private static readonly Regex WslUncRegex = new(
+        @"^[\\/]{2}wsl(\$|\.localhost)[\\/]([^\\/]+)([\\/].*)?$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     public static string ConvertToWslPath(string windowsPath)
     {
         if (string.IsNullOrEmpty(windowsPath)) return windowsPath;
+
+        var uncMatch = WslUncRegex.Match(windowsPath);
+        if (uncMatch.Success)
+        {
+            var rest = uncMatch.Groups[3].Value.Replace('\\', '/');
+            return rest.Length == 0 ? "/" : rest;
+        }
 
         var match = Regex.Match(windowsPath, @"^([A-Za-z]):[\\\/](.*)$");
         if (!match.Success) return windowsPath;
 
         var drive = match.Groups[1].Value.ToLowerInvariant();
-        var rest = match.Groups[2].Value.Replace('\\', '/');
-        return $"/mnt/{drive}/{rest}";
+        var rest2 = match.Groups[2].Value.Replace('\\', '/');
+        return $"/mnt/{drive}/{rest2}";
     }
+
+    public static bool IsWslUncPath(string path) =>
+        !string.IsNullOrEmpty(path) && WslUncRegex.IsMatch(path);
 
     private ProcessStartInfo CreatePsi(
         string command,
@@ -196,6 +210,23 @@ public class DockerCliService : IDockerCliService
         return new ProcessStream(process);
     }
 
+    public ProcessStream StartComposeWatch(string workingDirectory, IEnumerable<string> serviceNames)
+    {
+        var args = BuildComposeArgs(workingDirectory, ["watch", "--no-up"]);
+        args.AddRange(serviceNames);
+
+        // watch 子程序內會觸發 rebuild，須同樣注入 build env
+        var buildEnv = GetBuildEnv(BuildKitParallelism);
+        var psi = CreatePsi(ComposeCommand, args, workingDirectory, IsWsl2 ? buildEnv : null);
+        if (!IsWsl2)
+            foreach (var kv in buildEnv)
+                psi.Environment[kv.Key] = kv.Value;
+
+        var process = new Process { StartInfo = psi };
+        process.Start();
+        return new ProcessStream(process);
+    }
+
     private List<string> BuildComposeArgs(string workingDirectory, IEnumerable<string> commandArgs)
     {
         var args = new List<string>(ComposeArgs);
@@ -345,23 +376,29 @@ public class DockerCliService : IDockerCliService
         return (process.ExitCode, combined);
     }
 
-    // withBuildEnv=true 時設定 BUILDKIT_MAX_PARALLELISM，避免平行 build 資源競爭
+    public static Dictionary<string, string> GetBuildEnv(int buildKitParallelism)
+    {
+        var env = new Dictionary<string, string> { ["COMPOSE_BAKE"] = "true" };
+        if (buildKitParallelism > 0)
+            env["BUILDKIT_MAX_PARALLELISM"] = buildKitParallelism.ToString();
+        return env;
+    }
+
+    // withBuildEnv=true 時設定 COMPOSE_BAKE 與 BUILDKIT_MAX_PARALLELISM
     private async Task<(int ExitCode, string Output)> RunCommandWithLogAsync(
         string command, IEnumerable<string> args, string? workingDirectory,
         Action<string> onOutput, CancellationToken ct, bool withBuildEnv = false)
     {
         IReadOnlyDictionary<string, string>? wslEnvOverrides = null;
-        if (withBuildEnv && IsWsl2 && BuildKitParallelism > 0)
-            wslEnvOverrides = new Dictionary<string, string>
-            {
-                ["BUILDKIT_MAX_PARALLELISM"] = BuildKitParallelism.ToString()
-            };
+        if (withBuildEnv && IsWsl2)
+            wslEnvOverrides = GetBuildEnv(BuildKitParallelism);
 
         var psi = CreatePsi(command, args, workingDirectory, wslEnvOverrides);
         psi.Environment["DOCKER_BUILDKIT"] = "1";
         psi.Environment["COMPOSE_DOCKER_CLI_BUILD"] = "1";
-        if (withBuildEnv && !IsWsl2 && BuildKitParallelism > 0)
-            psi.Environment["BUILDKIT_MAX_PARALLELISM"] = BuildKitParallelism.ToString();
+        if (withBuildEnv && !IsWsl2)
+            foreach (var kv in GetBuildEnv(BuildKitParallelism))
+                psi.Environment[kv.Key] = kv.Value;
 
         using var process = new Process { StartInfo = psi };
         var output = new StringBuilder();
