@@ -824,6 +824,33 @@ public partial class MainViewModel
     {
         if (project == null) return;
 
+        var runningComposes = project.ComposeFiles
+            .Where(c => c.Services.Any(s => s.IsRunning))
+            .ToList();
+        if (runningComposes.Count > 0 && IsDockerAvailable)
+        {
+            IsOperating = true;
+            StatusMessage = $"正在停止 {project.Name} 的服務...";
+            try
+            {
+                foreach (var compose in runningComposes)
+                {
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ■ 停止 {compose.FileName}");
+                    var (exitCode, _) = await _dockerCli.ComposeStopWithLogAsync(compose.DirectoryPath, AppendLog);
+                    if (exitCode != 0)
+                        AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {compose.FileName} 停止失敗 (exit code: {exitCode})，仍繼續移除");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"[例外] 停止服務失敗: {ex.Message}，仍繼續移除");
+            }
+            finally
+            {
+                IsOperating = false;
+            }
+        }
+
         if (!RecentlyRemovedFolders.Contains(project.FolderPath))
         {
             RecentlyRemovedFolders.Add(project.FolderPath);
