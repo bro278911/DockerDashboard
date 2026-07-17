@@ -231,6 +231,41 @@
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <Separator />
+                                            <MenuItem Header="啟動（快速）"
+                                                      Command="{Binding Data.ProjectUpCommand, Source={StaticResource Proxy}}"
+                                                      CommandParameter="{Binding}"
+                                                      ToolTip="啟動此專案全部服務，不重建 image">
+                                                <MenuItem.Icon>
+                                                    <materialDesign:PackIcon Kind="Play" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="增量重建＋啟動"
+                                                      Command="{Binding Data.ProjectIncrementalBuildCommand, Source={StaticResource Proxy}}"
+                                                      CommandParameter="{Binding}"
+                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
+                                                      ToolTip="使用 cache，只重建有變動的層後啟動">
+                                                <MenuItem.Icon>
+                                                    <materialDesign:PackIcon Kind="Hammer" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="強制重建＋啟動"
+                                                      Command="{Binding Data.ProjectBuildCommand, Source={StaticResource Proxy}}"
+                                                      CommandParameter="{Binding}"
+                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
+                                                      ToolTip="--no-cache 完整重建後啟動，耗時較長">
+                                                <MenuItem.Icon>
+                                                    <materialDesign:PackIcon Kind="HammerWrench" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="停止"
+                                                      Command="{Binding Data.ProjectDownCommand, Source={StaticResource Proxy}}"
+                                                      CommandParameter="{Binding}"
+                                                      ToolTip="停止此專案全部服務">
+                                                <MenuItem.Icon>
+                                                    <materialDesign:PackIcon Kind="Stop" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <Separator />
                                             <MenuItem Header="移除專案"
                                                       Command="{Binding Data.RemoveProjectCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
