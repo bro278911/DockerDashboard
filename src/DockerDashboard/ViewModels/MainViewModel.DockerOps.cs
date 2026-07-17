@@ -217,6 +217,70 @@ public partial class MainViewModel
     }
 
     [RelayCommand]
+    private async Task ProjectUpAsync(DockerProject? project)
+    {
+        if (project == null) return;
+
+        await RunComposeBatchAsync(
+            project.ComposeFiles.ToList(),
+            (dir, ct) => _dockerCli.ComposeUpFastWithLogAsync(dir, AppendLog, ct: ct),
+            $"正在啟動 {project.Name}（快速模式）...",
+            $"▶ 啟動 {project.Name}（快速模式，不重建 image）",
+            "啟動",
+            $"✅ {project.Name} 已啟動",
+            "⚠ {0} 個服務啟動失敗",
+            Math.Clamp(_batchStartupParallelism, 1, 8));
+    }
+
+    [RelayCommand]
+    private async Task ProjectIncrementalBuildAsync(DockerProject? project)
+    {
+        if (project == null) return;
+
+        await RunComposeBatchAsync(
+            project.ComposeFiles.ToList(),
+            (dir, ct) => _dockerCli.ComposeRebuildRestartWithLogAsync(dir, AppendLog, ct: ct),
+            $"正在增量重建 {project.Name}（使用 cache）...",
+            $"▶ 增量重建 {project.Name}（使用 cache，只重建有變動的層）",
+            "增量重建+啟動",
+            $"✅ {project.Name} 已增量重建並啟動",
+            "⚠ {0} 個服務增量重建失敗",
+            2);
+    }
+
+    [RelayCommand]
+    private async Task ProjectBuildAsync(DockerProject? project)
+    {
+        if (project == null) return;
+
+        await RunComposeBatchAsync(
+            project.ComposeFiles.ToList(),
+            (dir, ct) => _dockerCli.ComposeForceRebuildWithLogAsync(dir, AppendLog, ct),
+            $"正在強制重建 {project.Name}（不使用 cache）...",
+            $"▶ 強制重建 {project.Name}（--no-cache，耗時較長）",
+            "強制重建+啟動",
+            $"✅ {project.Name} 已重建並啟動",
+            "⚠ {0} 個服務重建失敗",
+            2);
+    }
+
+    [RelayCommand]
+    private async Task ProjectDownAsync(DockerProject? project)
+    {
+        if (project == null) return;
+
+        await RunComposeBatchAsync(
+            project.ComposeFiles.ToList(),
+            (dir, ct) => _dockerCli.ComposeDownWithLogAsync(dir, AppendLog, ct),
+            $"正在停止 {project.Name}...",
+            $"■ 停止 {project.Name}",
+            "停止",
+            $"✅ {project.Name} 已停止",
+            "⚠ {0} 個服務停止失敗",
+            null);
+    }
+
+    [RelayCommand]
     private async Task StartServiceAsync(DockerService? service)
     {
         if (service == null) return;
