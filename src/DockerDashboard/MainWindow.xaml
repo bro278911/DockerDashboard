@@ -234,6 +234,7 @@
                                             <MenuItem Header="啟動（快速）"
                                                       Command="{Binding Data.ProjectUpCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
+                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
                                                       ToolTip="啟動此專案全部服務，不重建 image">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Play" />
@@ -260,6 +261,7 @@
                                             <MenuItem Header="停止"
                                                       Command="{Binding Data.ProjectDownCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
+                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
                                                       ToolTip="停止此專案全部服務">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Stop" />
