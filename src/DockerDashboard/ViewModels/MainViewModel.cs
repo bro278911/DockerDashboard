@@ -378,6 +378,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
             // 預先建立查找表，將 O(n²) 降為 O(n)
             var byName = new Dictionary<string, ContainerInfo>(StringComparer.OrdinalIgnoreCase);
             var byComposeService = new Dictionary<string, ContainerInfo>(StringComparer.OrdinalIgnoreCase);
+            var byDirService = new Dictionary<string, ContainerInfo>(StringComparer.OrdinalIgnoreCase);
+
+            static string NormalizePath(string path) => path.Replace('\\', '/').TrimEnd('/');
 
             foreach (var c in containers)
             {
@@ -385,12 +388,30 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     byName.TryAdd(name.TrimStart('/'), c);
 
                 const string svcPrefix = "com.docker.compose.service=";
+                const string dirPrefix = "com.docker.compose.project.working_dir=";
+                string? svc = null, workDir = null;
                 foreach (var label in c.Labels.Split(','))
                 {
                     if (label.StartsWith(svcPrefix, StringComparison.OrdinalIgnoreCase))
-                        byComposeService.TryAdd(label[svcPrefix.Length..].Trim(), c);
+                        svc = label[svcPrefix.Length..].Trim();
+                    else if (label.StartsWith(dirPrefix, StringComparison.OrdinalIgnoreCase))
+                        workDir = label[dirPrefix.Length..].Trim();
                 }
+
+                if (svc == null) continue;
+                byComposeService.TryAdd(svc, c);
+                if (workDir != null)
+                    byDirService.TryAdd($"{NormalizePath(workDir)}|{svc}", c);
             }
+
+            // 同名 service 出現在多個資料夾（同專案不同分支）時，禁用不分資料夾的寬鬆比對
+            var ambiguousNames = Projects
+                .SelectMany(p => p.ComposeFiles)
+                .SelectMany(f => f.Services)
+                .GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Select(s => s.WorkingDirectory).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
+                .Select(g => g.Key)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             foreach (var project in Projects)
             {
@@ -403,8 +424,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         if (!string.IsNullOrEmpty(service.ContainerName))
                             byName.TryGetValue(service.ContainerName, out match);
 
-                        match ??= byComposeService.GetValueOrDefault(service.Name);
-                        match ??= byName.GetValueOrDefault(service.Name);
+                        match ??= byDirService.GetValueOrDefault(
+                            $"{NormalizePath(service.WorkingDirectory)}|{service.Name}");
+                        match ??= byDirService.GetValueOrDefault(
+                            $"{NormalizePath(DockerCliService.ConvertToWslPath(service.WorkingDirectory))}|{service.Name}");
+
+                        if (!ambiguousNames.Contains(service.Name))
+                        {
+                            match ??= byComposeService.GetValueOrDefault(service.Name);
+                            match ??= byName.GetValueOrDefault(service.Name);
+                        }
 
                         if (match != null)
                         {
