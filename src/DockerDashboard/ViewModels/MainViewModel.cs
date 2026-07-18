@@ -378,6 +378,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
             // 預先建立查找表，將 O(n²) 降為 O(n)
             var byName = new Dictionary<string, ContainerInfo>(StringComparer.OrdinalIgnoreCase);
             var byComposeService = new Dictionary<string, ContainerInfo>(StringComparer.OrdinalIgnoreCase);
+            var byDirService = new Dictionary<string, ContainerInfo>(StringComparer.OrdinalIgnoreCase);
+
+            static string NormalizePath(string path) => path.Replace('\\', '/').TrimEnd('/');
 
             foreach (var c in containers)
             {
@@ -385,12 +388,42 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     byName.TryAdd(name.TrimStart('/'), c);
 
                 const string svcPrefix = "com.docker.compose.service=";
+                const string dirPrefix = "com.docker.compose.project.working_dir=";
+                string? svc = null;
                 foreach (var label in c.Labels.Split(','))
                 {
                     if (label.StartsWith(svcPrefix, StringComparison.OrdinalIgnoreCase))
-                        byComposeService.TryAdd(label[svcPrefix.Length..].Trim(), c);
+                        svc = label[svcPrefix.Length..].Trim();
                 }
+
+                if (svc == null) continue;
+
+                // working_dir 值可能含逗號，不能用逗號切割；以下一個已知 label 前綴當終點
+                string? workDir = null;
+                var dirIdx = c.Labels.IndexOf(dirPrefix, StringComparison.OrdinalIgnoreCase);
+                if (dirIdx >= 0)
+                {
+                    var start = dirIdx + dirPrefix.Length;
+                    var end = c.Labels.IndexOf(",com.docker.", start, StringComparison.OrdinalIgnoreCase);
+                    if (end < 0) end = c.Labels.IndexOf(",desktop.", start, StringComparison.OrdinalIgnoreCase);
+                    workDir = (end < 0 ? c.Labels[start..] : c.Labels[start..end]).Trim();
+                }
+
+                // 有資料夾 label 的容器只走資料夾比對，避免誤配到未匯入的同名 service
+                if (workDir != null)
+                    byDirService.TryAdd($"{NormalizePath(workDir)}|{svc}", c);
+                else
+                    byComposeService.TryAdd(svc, c);
             }
+
+            // 同名 service 出現在多個資料夾（同專案不同分支）時，禁用不分資料夾的寬鬆比對
+            var ambiguousNames = Projects
+                .SelectMany(p => p.ComposeFiles)
+                .SelectMany(f => f.Services)
+                .GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Select(s => s.WorkingDirectory).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
+                .Select(g => g.Key)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             foreach (var project in Projects)
             {
@@ -403,8 +436,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         if (!string.IsNullOrEmpty(service.ContainerName))
                             byName.TryGetValue(service.ContainerName, out match);
 
-                        match ??= byComposeService.GetValueOrDefault(service.Name);
-                        match ??= byName.GetValueOrDefault(service.Name);
+                        match ??= byDirService.GetValueOrDefault(
+                            $"{NormalizePath(service.WorkingDirectory)}|{service.Name}");
+                        match ??= byDirService.GetValueOrDefault(
+                            $"{NormalizePath(DockerCliService.ConvertToWslPath(service.WorkingDirectory))}|{service.Name}");
+
+                        if (!ambiguousNames.Contains(service.Name))
+                        {
+                            match ??= byComposeService.GetValueOrDefault(service.Name);
+                            match ??= byName.GetValueOrDefault(service.Name);
+                        }
 
                         if (match != null)
                         {
