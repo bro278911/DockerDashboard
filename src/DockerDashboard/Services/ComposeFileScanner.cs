@@ -51,9 +51,12 @@ public class ComposeFileScanner
             try
             {
                 var mainComposePath = FindMainComposeFile(directory)!;
-                var composeFile = await ParseWithDockerCliAsync(mainComposePath) ?? ParseManually(mainComposePath);
-                if (composeFile != null)
-                    _cache.Store(directory, stamps, composeFile);
+                var cliParsed = await ParseWithDockerCliAsync(mainComposePath);
+                var composeFile = cliParsed ?? ParseManually(mainComposePath);
+                // fallback 解析無變數展開與 override 合併，ProjectName 不可靠：
+                // 不寫快取，待 Docker CLI 可用時重新以 compose config 解析
+                if (cliParsed != null)
+                    _cache.Store(directory, stamps, cliParsed);
                 return composeFile;
             }
             finally
@@ -160,7 +163,8 @@ public class ComposeFileScanner
             FilePath = filePath,
             DirectoryPath = directory,
             ProjectName = root.TryGetProperty("name", out var nameEl)
-                ? nameEl.GetString() ?? DeriveDefaultProjectName(directory)
+                    && nameEl.GetString() is { } name && !string.IsNullOrWhiteSpace(name)
+                ? name
                 : DeriveDefaultProjectName(directory)
         };
 
@@ -228,10 +232,12 @@ public class ComposeFileScanner
 
             var root = (YamlDotNet.RepresentationModel.YamlMappingNode)yaml.Documents[0].RootNode;
 
+            // 含 ${...} 的 name 需要變數展開，fallback 無法解析，維持資料夾衍生預設值
             if (root.Children.TryGetValue(
                     new YamlDotNet.RepresentationModel.YamlScalarNode("name"), out var nameNode)
                 && nameNode is YamlDotNet.RepresentationModel.YamlScalarNode nameScalar
-                && !string.IsNullOrWhiteSpace(nameScalar.Value))
+                && !string.IsNullOrWhiteSpace(nameScalar.Value)
+                && !nameScalar.Value.Contains("${"))
             {
                 compose.ProjectName = nameScalar.Value;
             }
