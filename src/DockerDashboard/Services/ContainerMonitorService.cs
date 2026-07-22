@@ -95,8 +95,12 @@ public class ContainerMonitorService : IDisposable
                 }
 
                 var containers = await _dockerCli.GetRunningContainersAsync(ct);
-                DetectCrashes(containers);
-                ContainersUpdated?.Invoke(containers);
+                // docker ps 失敗回 null：跳過本輪，避免整批誤判為停止（狀態燈全紅閃爍）
+                if (containers != null)
+                {
+                    DetectCrashes(containers);
+                    ContainersUpdated?.Invoke(containers);
+                }
 
                 if (_timer != null)
                     await _timer.WaitForNextTickAsync(ct);
@@ -215,6 +219,7 @@ public class ContainerMonitorService : IDisposable
             }
 
             var containers = await _dockerCli.GetRunningContainersAsync();
+            if (containers == null) return;
             DetectCrashes(containers);
             ContainersUpdated?.Invoke(containers);
         }

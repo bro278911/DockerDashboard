@@ -158,7 +158,10 @@ public class ComposeFileScanner
         {
             FileName = Path.GetFileName(filePath),
             FilePath = filePath,
-            DirectoryPath = directory
+            DirectoryPath = directory,
+            ProjectName = root.TryGetProperty("name", out var nameEl)
+                ? nameEl.GetString() ?? DeriveDefaultProjectName(directory)
+                : DeriveDefaultProjectName(directory)
         };
 
         foreach (var service in servicesElement.EnumerateObject())
@@ -214,6 +217,7 @@ public class ComposeFileScanner
                 FilePath = filePath,
                 DirectoryPath = Path.GetDirectoryName(filePath) ?? string.Empty
             };
+            compose.ProjectName = DeriveDefaultProjectName(compose.DirectoryPath);
 
             var yaml = new YamlDotNet.RepresentationModel.YamlStream();
             using var reader = new StreamReader(filePath);
@@ -223,6 +227,14 @@ public class ComposeFileScanner
                 return compose;
 
             var root = (YamlDotNet.RepresentationModel.YamlMappingNode)yaml.Documents[0].RootNode;
+
+            if (root.Children.TryGetValue(
+                    new YamlDotNet.RepresentationModel.YamlScalarNode("name"), out var nameNode)
+                && nameNode is YamlDotNet.RepresentationModel.YamlScalarNode nameScalar
+                && !string.IsNullOrWhiteSpace(nameScalar.Value))
+            {
+                compose.ProjectName = nameScalar.Value;
+            }
 
             if (root.Children.TryGetValue(
                     new YamlDotNet.RepresentationModel.YamlScalarNode("services"), out var servicesNode)
@@ -265,6 +277,19 @@ public class ComposeFileScanner
         {
             return null;
         }
+    }
+
+    // compose 預設 project name 規則：資料夾名小寫化，僅保留 [a-z0-9_-]
+    internal static string DeriveDefaultProjectName(string directory)
+    {
+        var baseName = Path.GetFileName(Path.TrimEndingDirectorySeparator(directory)).ToLowerInvariant();
+        var sb = new System.Text.StringBuilder(baseName.Length);
+        foreach (var ch in baseName)
+        {
+            if (ch is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '_' or '-')
+                sb.Append(ch);
+        }
+        return sb.ToString().TrimStart('_', '-');
     }
 
     // 清理 compose 變數語法，例如 ${DOCKER_REGISTRY:-}nginx → nginx
