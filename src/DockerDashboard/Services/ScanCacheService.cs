@@ -18,7 +18,8 @@ public sealed record CachedDirectoryDto(
     List<CachedFileStamp> Files,
     string FileName,
     string FilePath,
-    List<CachedServiceDto> Services);
+    List<CachedServiceDto> Services,
+    string? ProjectName = null);
 
 // 以 compose 檔 mtime 驗證的掃描結果快取；命中時可跳過 docker compose config 解析
 public sealed class ScanCacheService
@@ -50,6 +51,10 @@ public sealed class ScanCacheService
         if (!_entries.TryGetValue(directory, out var entry))
             return null;
 
+        // 舊版快取缺 ProjectName，視為未命中以重掃補齊
+        if (entry.ProjectName == null)
+            return null;
+
         if (entry.Files.Count != currentStamps.Count)
             return null;
 
@@ -66,7 +71,8 @@ public sealed class ScanCacheService
         {
             FileName = entry.FileName,
             FilePath = entry.FilePath,
-            DirectoryPath = directory
+            DirectoryPath = directory,
+            ProjectName = entry.ProjectName
         };
         foreach (var svc in entry.Services)
         {
@@ -91,7 +97,8 @@ public sealed class ScanCacheService
             composeFile.FilePath,
             composeFile.Services
                 .Select(s => new CachedServiceDto(s.Name, s.Image, s.ContainerName, s.Ports))
-                .ToList());
+                .ToList(),
+            composeFile.ProjectName);
     }
 
     public async Task LoadAsync()

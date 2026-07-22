@@ -32,3 +32,4 @@ desktop.ini
 # Logs
 *.log
 scripts/release.ps1
+docs/superpowers/

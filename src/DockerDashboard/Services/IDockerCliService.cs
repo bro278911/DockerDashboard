@@ -15,7 +15,8 @@ public interface IDockerCliService
 
     Task<bool> IsDockerAvailableAsync(CancellationToken ct = default);
 
-    Task<List<ContainerInfo>> GetRunningContainersAsync(CancellationToken ct = default);
+    /// <summary>docker ps 失敗（逾時、非零 exit code、例外）時回傳 null，呼叫端應跳過該輪更新。</summary>
+    Task<List<ContainerInfo>?> GetRunningContainersAsync(CancellationToken ct = default);
 
     ProcessStream StartLogStream(string containerNameOrId);
 

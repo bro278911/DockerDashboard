@@ -118,7 +118,7 @@ public class DockerCliService : IDockerCliService
         }
     }
 
-    public async Task<List<ContainerInfo>> GetRunningContainersAsync(CancellationToken ct = default)
+    public async Task<List<ContainerInfo>?> GetRunningContainersAsync(CancellationToken ct = default)
     {
         var containers = new List<ContainerInfo>();
         try
@@ -142,13 +142,13 @@ public class DockerCliService : IDockerCliService
             catch (OperationCanceledException)
             {
                 try { process.Kill(entireProcessTree: true); } catch { }
-                return containers;
+                return null;
             }
 
             if (process.ExitCode != 0)
             {
                 Debug.WriteLine($"[DockerCli] docker ps exit code: {process.ExitCode}");
-                return containers;
+                return null;
             }
 
             var lines = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries);
@@ -182,10 +182,14 @@ public class DockerCliService : IDockerCliService
 
             Debug.WriteLine($"[DockerCli] Parsed {containers.Count} containers");
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
         catch (Exception ex)
         {
             Debug.WriteLine($"[DockerCli] GetRunningContainersAsync error: {ex.Message}");
+            return null;
         }
 
         return containers;
