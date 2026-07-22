@@ -16,8 +16,16 @@ public sealed class ContainerMatcher
     private readonly Dictionary<string, ContainerInfo> _byDirService = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ContainerInfo> _byProjectService = new(StringComparer.OrdinalIgnoreCase);
 
-    public ContainerMatcher(IEnumerable<ContainerInfo> containers)
+    public ContainerMatcher(IEnumerable<ContainerInfo> containers, IEnumerable<string> importedDirectories)
     {
+        // 已匯入資料夾集合（含 WSL 路徑變體）：判斷容器是否「屬於」某個匯入節點
+        var importedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var dir in importedDirectories)
+        {
+            importedDirs.Add(NormalizePath(dir));
+            importedDirs.Add(NormalizePath(DockerCliService.ConvertToWslPath(dir)));
+        }
+
         foreach (var c in containers)
         {
             foreach (var name in c.Names.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries))
@@ -46,7 +54,10 @@ public sealed class ContainerMatcher
                 workDir = (end < 0 ? c.Labels[start..] : c.Labels[start..end]).Trim();
             }
 
-            if (!string.IsNullOrEmpty(proj))
+            // project 比對只收「不屬於任何已匯入資料夾」的容器：
+            // 屬於匯入資料夾者由 dir 比對精準對應，不得經 project name 讓其他同 project 資料夾連帶亮綠
+            var belongsToImported = workDir != null && importedDirs.Contains(NormalizePath(workDir));
+            if (!string.IsNullOrEmpty(proj) && !belongsToImported)
                 AddPreferRunning(_byProjectService, $"{proj}|{svc}", c);
 
             // 有資料夾 label 的容器只走資料夾/project 比對，避免誤配到未匯入的同名 service

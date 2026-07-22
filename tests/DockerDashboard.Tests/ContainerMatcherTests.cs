@@ -23,7 +23,7 @@ public class ContainerMatcherTests
     public void Resolve_ByWorkingDir_ExactFolder()
     {
         var container = Make("cmpbackend-nginx-1", "running", "cmpbackend", @"D:\proj\A", "nginx");
-        var matcher = new ContainerMatcher([container]);
+        var matcher = new ContainerMatcher([container], [@"D:\proj\A"]);
 
         var match = matcher.Resolve("nginx", null, @"D:\proj\A", "cmpbackend", NoAmbiguous);
 
@@ -38,7 +38,7 @@ public class ContainerMatcherTests
         // working_dir label 指向未匯入的資料夾，仍應以 project name 對上
         var container = Make("cmpbackend-orderbackend-1", "running", "cmpbackend",
             @"D:\proj\.worktrees\CMPBackend-feat-803", "orderbackend");
-        var matcher = new ContainerMatcher([container]);
+        var matcher = new ContainerMatcher([container], [@"D:\proj\Code\CMPBackend"]);
 
         var ambiguous = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "orderbackend" };
         var match = matcher.Resolve("orderbackend", null, @"D:\proj\Code\CMPBackend", "cmpbackend", ambiguous);
@@ -48,11 +48,27 @@ public class ContainerMatcherTests
     }
 
     [Fact]
+    public void Resolve_NoProjectFallback_WhenContainerBelongsToImportedFolder()
+    {
+        // 容器 working_dir 屬於已匯入資料夾 A：只有 A 亮綠，
+        // 同 project 的資料夾 B 不得經 project name 連帶亮綠
+        var container = Make("cmpbackend-web-1", "running", "cmpbackend", @"D:\proj\A", "web");
+        var matcher = new ContainerMatcher([container], [@"D:\proj\A", @"D:\proj\B"]);
+
+        var fromA = matcher.Resolve("web", null, @"D:\proj\A", "cmpbackend", NoAmbiguous);
+        var fromB = matcher.Resolve("web", null, @"D:\proj\B", "cmpbackend",
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "web" });
+
+        Assert.NotNull(fromA);
+        Assert.Null(fromB);
+    }
+
+    [Fact]
     public void Resolve_NoCrossMatch_WhenProjectNamesDiffer()
     {
         // 不同分支資料夾各自預設 project name（basename 衍生）不同，不得互相誤配
         var container = Make("appa-web-1", "running", "app-a", @"D:\proj\app-a", "web");
-        var matcher = new ContainerMatcher([container]);
+        var matcher = new ContainerMatcher([container], [@"D:\proj\app-b"]);
 
         var ambiguous = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "web" };
         var match = matcher.Resolve("web", null, @"D:\proj\app-b", "app-b", ambiguous);
@@ -65,7 +81,7 @@ public class ContainerMatcherTests
     {
         var exited = Make("cmpbackend-web-1-old", "exited", "cmpbackend", @"D:\proj\A", "web");
         var running = Make("cmpbackend-web-1", "running", "cmpbackend", @"D:\proj\B", "web");
-        var matcher = new ContainerMatcher([exited, running]);
+        var matcher = new ContainerMatcher([exited, running], [@"D:\proj\C"]);
 
         var match = matcher.Resolve("web", null, @"D:\proj\C", "cmpbackend", NoAmbiguous);
 
@@ -84,7 +100,7 @@ public class ContainerMatcherTests
             State = "running",
             Labels = "com.docker.compose.service=web"
         };
-        var matcher = new ContainerMatcher([container]);
+        var matcher = new ContainerMatcher([container], [@"D:\proj\A"]);
 
         var ambiguous = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "web" };
         var match = matcher.Resolve("web", null, @"D:\proj\A", "", ambiguous);
@@ -96,7 +112,7 @@ public class ContainerMatcherTests
     public void Resolve_ByContainerName_TakesPriority()
     {
         var container = Make("my-fixed-name", "running", "cmpbackend", @"D:\proj\A", "web");
-        var matcher = new ContainerMatcher([container]);
+        var matcher = new ContainerMatcher([container], [@"D:\other"]);
 
         var match = matcher.Resolve("web", "my-fixed-name", @"D:\other", "", NoAmbiguous);
 
@@ -109,7 +125,7 @@ public class ContainerMatcherTests
     {
         // config_files 值含逗號與路徑，working_dir 解析須以下一個 label 前綴為界
         var container = Make("cmpbackend-api-1", "running", "cmpbackend", @"D:\dir with,comma", "api");
-        var matcher = new ContainerMatcher([container]);
+        var matcher = new ContainerMatcher([container], [@"D:\dir with,comma"]);
 
         var match = matcher.Resolve("api", null, @"D:\dir with,comma", "", NoAmbiguous);
 

@@ -375,7 +375,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         Application.Current?.Dispatcher.InvokeAsync(() =>
         {
-            var matcher = new ContainerMatcher(containers);
+            var importedDirs = Projects
+                .SelectMany(p => p.ComposeFiles)
+                .Select(f => f.DirectoryPath)
+                .Where(d => !string.IsNullOrEmpty(d));
+            var matcher = new ContainerMatcher(containers, importedDirs);
 
             // 同名 service 出現在多個資料夾（同專案不同分支）時，禁用不分資料夾的寬鬆比對
             var ambiguousNames = Projects
