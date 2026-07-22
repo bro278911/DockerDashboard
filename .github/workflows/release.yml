@@ -1,0 +1,113 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# 兩次 merge 並發時排隊執行，避免版號互踩
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      # 第三方 action 鎖 full SHA（v4），防 tag 被移動的供應鏈風險
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: 計算版號
+        id: ver
+        shell: pwsh
+        run: |
+          $headSubject = git log -1 --format=%s
+          if ($headSubject -match '\[skip release\]') {
+            Write-Host "commit 標記 [skip release]，跳過發佈"
+            "skip=true" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          # 只認嚴格 vX.Y.Z tag，取最高 SemVer（git describe 是拓撲最近而非最高版，亂 tag 會污染判版）
+          $tags = @(git tag --list 'v*') | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' }
+          $lastTag = $tags | Sort-Object { [version]$_.Substring(1) } | Select-Object -Last 1
+          if (-not $lastTag) { $lastTag = "v0.0.0" }
+
+          if ($lastTag -ne "v0.0.0" -and (git rev-list -n 1 $lastTag) -eq (git rev-parse HEAD)) {
+            Write-Host "HEAD 已是 $lastTag，無新 commit，跳過發佈"
+            "skip=true" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          # feat → minor、其餘（fix/chore/docs...）→ patch
+          $ver = [version]($lastTag.Substring(1))
+          $range = if ($lastTag -ne "v0.0.0") { "$lastTag..HEAD" } else { "HEAD" }
+          $subjects = @(git log $range --format=%s)
+          $hasFeat = $subjects | Where-Object { $_ -match '^feat(\(|!|:)' }
+          $next = if ($hasFeat) {
+            "{0}.{1}.0" -f $ver.Major, ($ver.Minor + 1)
+          } else {
+            "{0}.{1}.{2}" -f $ver.Major, $ver.Minor, ($ver.Build + 1)
+          }
+
+          Write-Host "上個 tag：$lastTag → 新版：$next（feat=$([bool]$hasFeat)）"
+          "skip=false" >> $env:GITHUB_OUTPUT
+          "version=$next" >> $env:GITHUB_OUTPUT
+          "lasttag=$lastTag" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        if: steps.ver.outputs.skip == 'false'
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        if: steps.ver.outputs.skip == 'false'
+        run: dotnet test tests/DockerDashboard.Tests -v minimal
+
+      - name: Publish
+        if: steps.ver.outputs.skip == 'false'
+        run: dotnet publish src/DockerDashboard -c Release -r win-x64 --self-contained false -o publish "-p:Version=${{ steps.ver.outputs.version }}"
+
+      # 鎖版與本機/既有 release 同源，防未審核新版供應鏈風險
+      - name: 安裝 vpk
+        if: steps.ver.outputs.skip == 'false'
+        run: dotnet tool install -g vpk --version 1.1.1
+
+      # 抓前版產 delta 更新包；首次或抓失敗只影響 delta，不擋發佈
+      - name: 下載前版
+        if: steps.ver.outputs.skip == 'false'
+        continue-on-error: true
+        run: vpk download github --repoUrl https://github.com/${{ github.repository }} --channel win --token ${{ github.token }}
+
+      # 參數對齊 scripts/release.ps1，與既有安裝版更新鏈相容
+      - name: vpk pack
+        if: steps.ver.outputs.skip == 'false'
+        run: vpk pack --packId DockerDashboard --packVersion ${{ steps.ver.outputs.version }} --packDir publish --mainExe DockerDashboard.exe --channel win
+
+      # tag 鎖定本次觸發 SHA：排隊期間 main 前進也不會 tag 到別的 commit
+      - name: 建立 tag
+        if: steps.ver.outputs.skip == 'false'
+        run: |
+          git tag "v${{ steps.ver.outputs.version }}" ${{ github.sha }}
+          git push origin "v${{ steps.ver.outputs.version }}"
+
+      # vpk upload 只上傳本版資產（download 抓回的舊版 nupkg 不會混入 release）
+      - name: 發佈 Release
+        if: steps.ver.outputs.skip == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ver = "${{ steps.ver.outputs.version }}"
+          vpk upload github --repoUrl https://github.com/${{ github.repository }} --channel win --publish --releaseName "v$ver" --tag "v$ver" --token $env:GH_TOKEN
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $lastTag = "${{ steps.ver.outputs.lasttag }}"
+          $range = if ($lastTag -ne "v0.0.0") { "$lastTag..HEAD" } else { "HEAD" }
+          $notes = (@(git log $range --format='- %s') -join "`n")
+          if (-not $notes) { $notes = "Version $ver" }
+          gh release edit "v$ver" --notes $notes
