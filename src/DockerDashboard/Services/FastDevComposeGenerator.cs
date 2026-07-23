@@ -6,33 +6,31 @@ namespace DockerDashboard.Services;
 
 public static class FastDevComposeGenerator
 {
-    public static string ContainerProjectPath(FastDevConfig config) =>
-        "/src/" + config.CsprojRelativePath;
+    public static string ContainerAppDir() => "/app";
 
-    public static string ContainerWorkingDir(FastDevConfig config)
+    public static string ProjectDirRelative(FastDevConfig config)
     {
         var slash = config.CsprojRelativePath.LastIndexOf('/');
-        var dir = slash < 0 ? string.Empty : config.CsprojRelativePath[..slash];
-        return dir.Length == 0 ? "/src" : "/src/" + dir;
+        return slash < 0 ? string.Empty : config.CsprojRelativePath[..slash];
     }
 
+    public static string ContainerDllPath(FastDevConfig config) =>
+        $"/app/bin/Debug/{config.Tfm}/{config.AssemblyName}.dll";
+
     public static string GenerateOverrideYaml(
-        string serviceName, FastDevConfig config, string srcRootHostPath, string nugetHostPath)
+        string serviceName, FastDevConfig config, string projectDirHostPath, string nugetHostPath)
     {
-        var projectPath = ContainerProjectPath(config);
+        var dll = ContainerDllPath(config);
         var sb = new StringBuilder();
         sb.AppendLine("services:");
         sb.AppendLine($"  {serviceName}:");
         sb.AppendLine($"    image: {config.RuntimeImage}");
-        sb.AppendLine("    user: root");
-        sb.AppendLine($"    working_dir: {ContainerWorkingDir(config)}");
         sb.AppendLine("    volumes:");
-        sb.AppendLine($"      - {srcRootHostPath}:/src:rw");
-        sb.AppendLine($"      - {nugetHostPath}:/root/.nuget/packages:rw");
+        sb.AppendLine($"      - {projectDirHostPath}:/app:rw");
+        sb.AppendLine($"      - {nugetHostPath}:/root/.nuget/packages:ro");
         sb.AppendLine("    environment:");
-        sb.AppendLine("      - DOTNET_USE_POLLING_FILE_WATCHER=1");
         sb.AppendLine("      - ASPNETCORE_ENVIRONMENT=Development");
-        sb.AppendLine($"    entrypoint: [\"dotnet\", \"watch\", \"--non-interactive\", \"--project\", \"{projectPath}\", \"run\", \"--no-launch-profile\"]");
+        sb.AppendLine($"    entrypoint: [\"dotnet\", \"{dll}\", \"--additionalProbingPath\", \"/root/.nuget/packages\"]");
         return sb.ToString();
     }
 

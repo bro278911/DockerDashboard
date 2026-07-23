@@ -10,38 +10,39 @@ public class FastDevComposeGeneratorTests
     {
         ServiceKey = "key::orderbackend",
         CsprojRelativePath = "OrderBackend/OrderBackend.csproj",
-        RuntimeImage = "mcr.microsoft.com/dotnet/sdk:10.0",
+        RuntimeImage = "mcr.microsoft.com/dotnet/aspnet:10.0",
+        Tfm = "net10.0",
+        AssemblyName = "OrderBackend",
         SrcRoot = @"D:\CMPBackend"
     };
 
     [Fact]
-    public void ContainerWorkingDir_取csproj的目錄()
+    public void ContainerDllPath_指向app下的bin()
     {
-        Assert.Equal("/src/OrderBackend", FastDevComposeGenerator.ContainerWorkingDir(SampleConfig()));
+        Assert.Equal("/app/bin/Debug/net10.0/OrderBackend.dll",
+            FastDevComposeGenerator.ContainerDllPath(SampleConfig()));
     }
 
     [Fact]
-    public void ContainerProjectPath_接在src下()
+    public void ProjectDirRelative_取csproj目錄()
     {
-        Assert.Equal("/src/OrderBackend/OrderBackend.csproj",
-            FastDevComposeGenerator.ContainerProjectPath(SampleConfig()));
+        Assert.Equal("OrderBackend", FastDevComposeGenerator.ProjectDirRelative(SampleConfig()));
     }
 
     [Fact]
-    public void GenerateOverrideYaml_含image掛載與watch進入點()
+    public void GenerateOverrideYaml_runtime掛bin跑dll()
     {
         var yaml = FastDevComposeGenerator.GenerateOverrideYaml(
-            "orderbackend", SampleConfig(), @"D:\CMPBackend", @"C:\Users\me\.nuget\packages");
+            "orderbackend", SampleConfig(), @"D:\CMPBackend\OrderBackend", @"C:\Users\me\.nuget\packages");
 
         Assert.Contains("orderbackend:", yaml);
-        Assert.Contains("image: mcr.microsoft.com/dotnet/sdk:10.0", yaml);
-        Assert.Contains(@"- D:\CMPBackend:/src:rw", yaml);
-        Assert.Contains(@"- C:\Users\me\.nuget\packages:/root/.nuget/packages:rw", yaml);
-        Assert.Contains("working_dir: /src/OrderBackend", yaml);
-        Assert.Contains("DOTNET_USE_POLLING_FILE_WATCHER=1", yaml);
-        Assert.Contains("\"dotnet\", \"watch\"", yaml);
-        Assert.Contains("\"--non-interactive\"", yaml);
-        Assert.Contains("\"/src/OrderBackend/OrderBackend.csproj\"", yaml);
+        Assert.Contains("image: mcr.microsoft.com/dotnet/aspnet:10.0", yaml);
+        Assert.Contains(@"- D:\CMPBackend\OrderBackend:/app:rw", yaml);
+        Assert.Contains(@"- C:\Users\me\.nuget\packages:/root/.nuget/packages:ro", yaml);
+        Assert.Contains("ASPNETCORE_ENVIRONMENT=Development", yaml);
+        Assert.Contains("\"dotnet\", \"/app/bin/Debug/net10.0/OrderBackend.dll\"", yaml);
+        Assert.Contains("\"--additionalProbingPath\", \"/root/.nuget/packages\"", yaml);
+        Assert.DoesNotContain("watch", yaml);
     }
 
     [Fact]
