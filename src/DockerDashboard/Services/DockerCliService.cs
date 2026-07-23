@@ -51,6 +51,11 @@ public class DockerCliService : IDockerCliService
     public static bool IsWslUncPath(string path) =>
         !string.IsNullOrEmpty(path) && WslUncRegex.IsMatch(path);
 
+    internal string? NormalizeComposeOverridePath(string? extraOverrideFile) =>
+        IsWsl2 && !string.IsNullOrEmpty(extraOverrideFile)
+            ? ConvertToWslPath(extraOverrideFile)
+            : extraOverrideFile;
+
     private ProcessStartInfo CreatePsi(
         string command,
         IEnumerable<string> args,
@@ -246,6 +251,17 @@ public class DockerCliService : IDockerCliService
         if (!string.IsNullOrEmpty(serviceName))
             args.Add(serviceName);
 
+        return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
+    }
+
+    public async Task<(int ExitCode, string Output)> ComposeUpNoDepsAsync(
+        string workingDirectory, string serviceName, Action<string> onOutput,
+        CancellationToken ct, string? extraOverrideFile = null)
+    {
+        var normalizedOverrideFile = NormalizeComposeOverridePath(extraOverrideFile);
+        var args = FastDevComposeGenerator.BuildUpArgs(
+            ComposeArgs, ComposeFileHelper.GetComposeFileArgs(workingDirectory),
+            normalizedOverrideFile, serviceName);
         return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
     }
 

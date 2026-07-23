@@ -27,6 +27,10 @@ public interface IDockerCliService
     Task<(int ExitCode, string Output)> ComposeUpFastWithLogAsync(
         string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default);
 
+    Task<(int ExitCode, string Output)> ComposeUpNoDepsAsync(
+        string workingDirectory, string serviceName, Action<string> onOutput,
+        CancellationToken ct, string? extraOverrideFile = null);
+
     Task<(int ExitCode, string Output)> ComposeDownWithLogAsync(
         string workingDirectory, Action<string> onOutput, CancellationToken ct = default);
 
