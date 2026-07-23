@@ -14,6 +14,33 @@ public class FastDevDetectorTests
     }
 
     [Fact]
+    public void FromDockerfile_取Dockerfile同目錄csproj與aspnet()
+    {
+        var root = NewTempDir();
+        try
+        {
+            var projDir = Path.Combine(root, "OrderBackend");
+            Directory.CreateDirectory(projDir);
+            File.WriteAllText(Path.Combine(projDir, "OrderBackend.csproj"), "<Project/>");
+            var dockerfile = Path.Combine(projDir, "Dockerfile");
+            File.WriteAllText(dockerfile, "FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base\n");
+
+            var info = FastDevDetector.FromDockerfile(root, dockerfile, "aspnet:default");
+
+            Assert.NotNull(info);
+            Assert.Equal("OrderBackend/OrderBackend.csproj", info!.CsprojRelativePath);
+            Assert.Equal("mcr.microsoft.com/dotnet/aspnet:10.0", info.RuntimeImage);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void FromDockerfile_檔案不存在回null()
+    {
+        Assert.Null(FastDevDetector.FromDockerfile(@"C:\x", @"C:\x\nope\Dockerfile", "aspnet:default"));
+    }
+
+    [Fact]
     public void Detect_單一符合服務名的csproj_自動採用()
     {
         var root = NewTempDir();

@@ -11,6 +11,8 @@ public sealed record FastDevDetectionResult(
 
 public sealed record FastDevProjectInfo(string Tfm, string AssemblyName);
 
+public sealed record FastDevDockerfileInfo(string CsprojRelativePath, string RuntimeImage);
+
 public static class FastDevDetector
 {
     private static readonly Regex AspnetFromRegex = new(
@@ -46,6 +48,29 @@ public static class FastDevDetector
             .FirstOrDefault();
 
         return new FastDevDetectionResult(candidates, runtimeImage, solution);
+    }
+
+    // 對齊 VS：由 compose build.dockerfile 確定專案，取該 Dockerfile 同目錄的 csproj 與 aspnet runtime
+    public static FastDevDockerfileInfo? FromDockerfile(
+        string workingDirectory, string dockerfileAbsPath, string defaultRuntimeImage)
+    {
+        if (string.IsNullOrEmpty(dockerfileAbsPath) || !File.Exists(dockerfileAbsPath))
+            return null;
+
+        var projectDir = Path.GetDirectoryName(dockerfileAbsPath);
+        if (projectDir == null || !Directory.Exists(projectDir))
+            return null;
+
+        var csproj = Directory.EnumerateFiles(projectDir, "*.csproj").FirstOrDefault();
+        if (csproj == null)
+            return null;
+
+        var csprojRel = Path.GetRelativePath(workingDirectory, csproj).Replace('\\', '/');
+        var runtime = defaultRuntimeImage;
+        var match = AspnetFromRegex.Match(File.ReadAllText(dockerfileAbsPath));
+        if (match.Success) runtime = match.Groups[1].Value;
+
+        return new FastDevDockerfileInfo(csprojRel, runtime);
     }
 
     public static FastDevProjectInfo ReadProjectInfo(

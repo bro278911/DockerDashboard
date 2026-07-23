@@ -826,18 +826,38 @@ public partial class MainViewModel
         var existing = settings.FastDevConfigs.FirstOrDefault(c => c.ServiceKey == service.WatchKey);
         if (existing != null) return existing;
 
-        var result = FastDevDetector.Detect(service.WorkingDirectory, service.Name, settings.DefaultRuntimeImage);
-        var chosen = PickBestCsproj(service.Name, result.CsprojCandidates);
-        if (chosen == null) return null;
-        if (result.CsprojCandidates.Count > 1)
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚙ {service.Name} 有多個 .csproj，自動選用 {chosen}");
+        string? chosen;
+        string runtimeImage;
+
+        // 優先照 compose build.dockerfile 確定專案（對齊 VS，零猜測）
+        var fromDockerfile = FastDevDetector.FromDockerfile(
+            service.WorkingDirectory, service.DockerfilePath, settings.DefaultRuntimeImage);
+        if (fromDockerfile != null)
+        {
+            chosen = fromDockerfile.CsprojRelativePath;
+            runtimeImage = fromDockerfile.RuntimeImage;
+        }
+        else
+        {
+            var result = FastDevDetector.Detect(service.WorkingDirectory, service.Name, settings.DefaultRuntimeImage);
+            chosen = PickBestCsproj(service.Name, result.CsprojCandidates);
+            runtimeImage = result.RuntimeImage;
+            if (chosen != null && result.CsprojCandidates.Count > 1)
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚙ {service.Name} 無 Dockerfile 資訊，自動選用 {chosen}");
+        }
+
+        if (chosen == null)
+        {
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {service.Name} 找不到對應 .csproj");
+            return null;
+        }
 
         var info = FastDevDetector.ReadProjectInfo(service.WorkingDirectory, chosen, "net10.0");
         return new FastDevConfig
         {
             ServiceKey = service.WatchKey,
             CsprojRelativePath = chosen,
-            RuntimeImage = result.RuntimeImage,
+            RuntimeImage = runtimeImage,
             Tfm = info.Tfm,
             AssemblyName = info.AssemblyName,
             SrcRoot = service.WorkingDirectory
