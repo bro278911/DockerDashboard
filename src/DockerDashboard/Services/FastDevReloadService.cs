@@ -15,6 +15,7 @@ public class FastDevReloadService : IDisposable
 
     public Func<string, Task>? OnSolutionChanged { get; set; }
     public TimeSpan DebounceDelay { get; set; } = TimeSpan.FromSeconds(2);
+    public bool IsEnabled { get; set; } = true;
 
     public void Watch(string solutionDir)
     {
@@ -62,6 +63,7 @@ public class FastDevReloadService : IDisposable
 
     private void OnEvent(string solutionDir, string changedPath)
     {
+        if (!IsEnabled) return;
         var relative = Path.GetRelativePath(solutionDir, changedPath);
         if (ShouldSkip(relative)) return;
 

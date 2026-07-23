@@ -16,9 +16,7 @@ public class AppSettings
     public bool UseComposeV2 { get; set; } = true;
     public DockerMode DockerMode { get; set; } = DockerMode.DockerDesktop;
     public string WslDistroName { get; set; } = "Ubuntu";
-    public bool AutoWatchEnabled { get; set; } = false;
-    public int WatchDebounceSeconds { get; set; } = 2;
-    public List<string> WatchEnabledServiceKeys { get; set; } = [];
+    public bool FastDevAutoReloadEnabled { get; set; } = true;
     public int BuildKitParallelism { get; set; } = 0;
     public int StartupParallelism { get; set; } = 3;
     public bool AutoCheckUpdate { get; set; } = true;

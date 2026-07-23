@@ -6,39 +6,29 @@ namespace DockerDashboard.Tests;
 public class MainViewModelFastDevStateTests
 {
     [Fact]
-    public void PersistFastDev_啟用時移除Watch設定()
+    public void PersistFastDev_啟用時加入清單與設定()
     {
-        var settings = new AppSettings
-        {
-            WatchEnabledServiceKeys = ["compose.yml::api"],
-        };
+        var settings = new AppSettings();
+        var config = new FastDevConfig { ServiceKey = "compose.yml::api" };
 
-        MainViewModel.PersistFastDev(settings, "compose.yml::api", null, true);
+        MainViewModel.PersistFastDev(settings, "compose.yml::api", config, true);
 
-        Assert.DoesNotContain("compose.yml::api", settings.WatchEnabledServiceKeys);
         Assert.Contains("compose.yml::api", settings.FastDevEnabledServiceKeys);
+        Assert.Contains(settings.FastDevConfigs, c => c.ServiceKey == "compose.yml::api");
     }
 
     [Fact]
-    public void CanEnableWatch_FastDev啟用時回傳False()
-    {
-        var service = new DockerService
-        {
-            IsFastDev = true,
-        };
-
-        Assert.False(MainViewModel.CanEnableWatch(service));
-    }
-
-    [Fact]
-    public void ShouldRestoreWatch_兩種設定同時存在時FastDev優先()
+    public void PersistFastDev_停用時移除清單與設定()
     {
         var settings = new AppSettings
         {
-            WatchEnabledServiceKeys = ["compose.yml::api"],
             FastDevEnabledServiceKeys = ["compose.yml::api"],
+            FastDevConfigs = [new FastDevConfig { ServiceKey = "compose.yml::api" }],
         };
 
-        Assert.False(MainViewModel.ShouldRestoreWatch(settings, "compose.yml::api"));
+        MainViewModel.PersistFastDev(settings, "compose.yml::api", null, false);
+
+        Assert.DoesNotContain("compose.yml::api", settings.FastDevEnabledServiceKeys);
+        Assert.Empty(settings.FastDevConfigs);
     }
 }

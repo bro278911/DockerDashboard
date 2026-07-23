@@ -276,23 +276,6 @@
                                     <TextBlock Text="{Binding Name}" Margin="6,0,0,0" VerticalAlignment="Center" />
                                     <TextBlock Text="{Binding Image}" Margin="8,0,0,0"
                                                Foreground="Gray" FontSize="11" VerticalAlignment="Center" />
-                                    <!-- Auto Watch 開關 -->
-                                    <Button Width="20" Height="20" Padding="0" Margin="6,0,0,0"
-                                            Command="{Binding Data.ToggleWatchServiceCommand, Source={StaticResource Proxy}}"
-                                            CommandParameter="{Binding}"
-                                            ToolTip="Auto Watch：啟用後，原始碼變動會自動重建並重啟此服務（需在設定開啟全域開關）">
-                                        <Button.Style>
-                                            <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignIconButton}">
-                                                <Setter Property="Foreground" Value="Gray" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsWatching}" Value="True">
-                                                        <Setter Property="Foreground" Value="#4CAF50" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Button.Style>
-                                        <materialDesign:PackIcon Kind="Eye" Width="13" Height="13" />
-                                    </Button>
                                     <StackPanel.ContextMenu>
                                         <ContextMenu>
                                             <MenuItem Header="啟動"
@@ -326,14 +309,6 @@
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <Separator />
-                                            <MenuItem Header="Auto Watch 開關"
-                                                      Command="{Binding Data.ToggleWatchServiceCommand, Source={StaticResource Proxy}}"
-                                                      CommandParameter="{Binding}"
-                                                      ToolTip="檔案變動自動重建">
-                                                <MenuItem.Icon>
-                                                    <materialDesign:PackIcon Kind="Eye" />
-                                                </MenuItem.Icon>
-                                            </MenuItem>
                                             <MenuItem Header="Fast Dev 開關"
                                                       Command="{Binding Data.ToggleFastDevServiceCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
@@ -445,22 +420,6 @@
                                     IsEnabled="{Binding SelectedService.IsRunning}"
                                     ToolTip="重建重啟（重新 build image，改動程式碼後使用）" Foreground="#9C27B0">
                                 <materialDesign:PackIcon Kind="Hammer" />
-                            </Button>
-                            <!-- Auto Watch 開關 -->
-                            <Button Command="{Binding ToggleWatchServiceCommand}"
-                                    CommandParameter="{Binding SelectedService}"
-                                    ToolTip="Auto Watch：啟用後，原始碼變動自動重建並重啟（需在設定開啟全域開關）">
-                                <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignIconButton}">
-                                        <Setter Property="Foreground" Value="Gray" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding SelectedService.IsWatching}" Value="True">
-                                                <Setter Property="Foreground" Value="#4CAF50" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                                <materialDesign:PackIcon Kind="Eye" />
                             </Button>
                             <Button Style="{StaticResource MaterialDesignIconButton}"
                                     Command="{Binding ToggleFastDevServiceCommand}"

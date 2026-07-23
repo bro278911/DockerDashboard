@@ -28,9 +28,6 @@ public partial class DockerService : ObservableObject
     public bool IsStopped => Status != ContainerStatus.Running && Status != ContainerStatus.Restarting;
 
     [ObservableProperty]
-    private bool _isWatching;
-
-    [ObservableProperty]
     private bool _isFastDev;
 
     public string ComposeFilePath { get; set; } = string.Empty;

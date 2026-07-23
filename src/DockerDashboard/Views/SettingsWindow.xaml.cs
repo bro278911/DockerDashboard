@@ -26,8 +26,6 @@ public partial class SettingsWindow : Window
         PollSlider.Value = settings.PollIntervalSeconds;
         ComposeV2Toggle.IsChecked = settings.UseComposeV2;
         WslDistroBox.Text = settings.WslDistroName;
-        AutoWatchToggle.IsChecked = settings.AutoWatchEnabled;
-        WatchDebounceSlider.Value = settings.WatchDebounceSeconds;
         BuildKitSlider.Value = settings.BuildKitParallelism;
         StartupParallelSlider.Value = Math.Clamp(settings.StartupParallelism, 1, 8);
         AutoCheckUpdateToggle.IsChecked = settings.AutoCheckUpdate;
@@ -228,8 +226,6 @@ public partial class SettingsWindow : Window
         _settings.UseComposeV2 = ComposeV2Toggle.IsChecked == true;
         _settings.DockerMode = ModeWsl2.IsChecked == true ? DockerMode.Wsl2 : DockerMode.DockerDesktop;
         _settings.WslDistroName = WslDistroBox.Text.Trim();
-        _settings.AutoWatchEnabled = AutoWatchToggle.IsChecked == true;
-        _settings.WatchDebounceSeconds = (int)WatchDebounceSlider.Value;
         _settings.BuildKitParallelism = Math.Clamp((int)BuildKitSlider.Value, 0, 8);
         _settings.StartupParallelism = Math.Clamp((int)StartupParallelSlider.Value, 1, 8);
         _settings.AutoCheckUpdate = AutoCheckUpdateToggle.IsChecked == true;

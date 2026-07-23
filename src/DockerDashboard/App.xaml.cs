@@ -30,10 +30,8 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ComposeFileScanner>();
         services.AddSingleton<SettingsService>();
         services.AddSingleton<ContainerMonitorService>();
-        services.AddSingleton<WatchRebuildService>();
         services.AddSingleton<HostBuildService>();
         services.AddSingleton<FastDevReloadService>();
-        services.AddSingleton<ComposeWatchService>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
     }

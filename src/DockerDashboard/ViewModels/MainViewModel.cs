@@ -24,8 +24,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ComposeFileScanner _scanner;
     private readonly SettingsService _settingsService;
     private readonly ContainerMonitorService _monitor;
-    private readonly WatchRebuildService _watchService;
-    private readonly ComposeWatchService _composeWatch;
     private readonly HostBuildService _hostBuild;
     private readonly FastDevReloadService _fastDevReload;
     private readonly UpdateService _updateService;
@@ -33,7 +31,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ConcurrentQueue<string> _pendingLogQueue = new();
     private int _isLogFlushScheduled;
     private int _batchStartupParallelism = 3;
-    private bool _autoWatchEnabled;
     private CancellationTokenSource? _operationCts;
 
     public ObservableCollection<DockerProject> Projects { get; } = [];
@@ -49,6 +46,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _logFilter = string.Empty;
+
+    [ObservableProperty]
+    private bool _fastDevAutoReloadEnabled = true;
 
     [ObservableProperty]
     private DockerService? _selectedService;
@@ -103,8 +103,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ComposeFileScanner scanner,
         SettingsService settingsService,
         ContainerMonitorService monitor,
-        WatchRebuildService watchService,
-        ComposeWatchService composeWatch,
         HostBuildService hostBuild,
         FastDevReloadService fastDevReload,
         UpdateService updateService)
@@ -114,17 +112,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _scanner = scanner;
         _settingsService = settingsService;
         _monitor = monitor;
-        _watchService = watchService;
-        _composeWatch = composeWatch;
         _hostBuild = hostBuild;
         _fastDevReload = fastDevReload;
         _updateService = updateService;
 
         _monitor.ContainersUpdated += OnContainersUpdated;
         _monitor.ContainerCrashed += OnContainerCrashed;
-        _watchService.SetRebuildCallback(OnAutoRebuildTriggeredAsync);
-        _composeWatch.OnOutput = AppendLog;
-        _composeWatch.OnProcessExited = OnComposeWatchExited;
         _fastDevReload.OnSolutionChanged = OnFastDevSolutionChangedAsync;
 
         LogView = CollectionViewSource.GetDefaultView(LogLines);
@@ -198,8 +191,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _monitor.Start(TimeSpan.FromSeconds(settings.PollIntervalSeconds));
         await _monitor.ForceRefreshAsync();
 
-        ApplyWatchSettings(settings);
-        RestoreWatchStateFromSettings(settings);
+        ApplySettings(settings);
+        RestoreFastDevStateFromSettings(settings);
 
         StatusMessage = IsDockerAvailable ? "就緒" : "⚠ Docker 未連線（顯示快取清單，連線恢復後自動更新）";
 
@@ -230,83 +223,23 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return false;
     }
 
-    internal void ApplyWatchSettings(AppSettings settings)
+    internal void ApplySettings(AppSettings settings)
     {
-        _watchService.IsEnabled = settings.AutoWatchEnabled;
-        _watchService.DebounceDelay = TimeSpan.FromSeconds(settings.WatchDebounceSeconds);
         _batchStartupParallelism = Math.Clamp(settings.StartupParallelism, 1, 8);
-        _autoWatchEnabled = settings.AutoWatchEnabled;
+        _fastDevReload.IsEnabled = settings.FastDevAutoReloadEnabled;
+        FastDevAutoReloadEnabled = settings.FastDevAutoReloadEnabled;
     }
 
-    internal void RestoreWatchStateFromSettings(AppSettings settings)
+    internal void RestoreFastDevStateFromSettings(AppSettings settings)
     {
-        var wslDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var project in Projects)
-        {
-            foreach (var compose in project.ComposeFiles)
-            {
-                foreach (var service in compose.Services)
-                {
-                    service.IsFastDev = settings.FastDevEnabledServiceKeys.Contains(service.WatchKey);
-                    service.IsWatching = ShouldRestoreWatch(settings, service.WatchKey);
-                    if (!service.IsWatching) continue;
-
-                    if (DockerCliService.IsWslUncPath(service.WorkingDirectory))
-                        wslDirs.Add(service.WorkingDirectory);
-                    else
-                        _watchService.AddWatch(service.WorkingDirectory, service.Name);
-                }
-            }
-        }
-
-        foreach (var dir in wslDirs)
-            UpdateComposeWatchForDirectory(dir);
+        foreach (var service in Projects.SelectMany(p => p.ComposeFiles).SelectMany(c => c.Services))
+            service.IsFastDev = settings.FastDevEnabledServiceKeys.Contains(service.WatchKey);
 
         foreach (var dir in Projects.SelectMany(p => p.ComposeFiles).SelectMany(c => c.Services)
                      .Where(s => s.IsFastDev)
                      .Select(s => s.WorkingDirectory)
                      .Distinct(StringComparer.OrdinalIgnoreCase))
             _fastDevReload.Watch(dir);
-    }
-
-    internal static bool ShouldRestoreWatch(AppSettings settings, string serviceKey) =>
-        !settings.FastDevEnabledServiceKeys.Contains(serviceKey) &&
-        settings.WatchEnabledServiceKeys.Contains(serviceKey);
-
-    private async Task OnAutoRebuildTriggeredAsync(string workingDirectory, string serviceName)
-    {
-        AppendLog($"[{DateTime.Now:HH:mm:ss}] 👁 Auto Watch: {serviceName} 偵測到變動，開始自動重建...");
-        try
-        {
-            var (exitCode, _) = await _dockerCli.ComposeRebuildRestartWithLogAsync(
-                workingDirectory, AppendLog, serviceName);
-            if (exitCode == 0)
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ Auto Watch: {serviceName} 自動重建完成");
-            else
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ Auto Watch: {serviceName} 自動重建失敗 (exit {exitCode})");
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ Auto Watch: {serviceName} 例外: {ex.Message}");
-        }
-        finally
-        {
-            await _monitor.ForceRefreshAsync();
-        }
-    }
-
-    private void OnComposeWatchExited(string workingDirectory, int exitCode)
-    {
-        _ = Application.Current?.Dispatcher.InvokeAsync(async () =>
-        {
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ compose watch 異常退出 (exit code: {exitCode})：{workingDirectory}，已關閉該專案的 Auto Watch");
-            foreach (var project in Projects)
-                foreach (var compose in project.ComposeFiles)
-                    foreach (var service in compose.Services)
-                        if (string.Equals(service.WorkingDirectory, workingDirectory, StringComparison.OrdinalIgnoreCase))
-                            service.IsWatching = false;
-            await SaveSettingsAsync();
-        });
     }
 
     internal void ApplyDockerModeSettings(AppSettings settings)
@@ -369,11 +302,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var settings = await _settingsService.LoadAsync();
         settings.ImportedFolders = [.. Projects.Select(p => p.FolderPath)];
         settings.RecentlyRemovedFolders = [.. RecentlyRemovedFolders];
-        settings.WatchEnabledServiceKeys = [.. Projects
-            .SelectMany(p => p.ComposeFiles)
-            .SelectMany(c => c.Services)
-            .Where(s => s.IsWatching)
-            .Select(s => s.WatchKey)];
         await _settingsService.SaveAsync(settings);
     }
 
@@ -542,8 +470,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _monitor.ContainersUpdated -= OnContainersUpdated;
         _monitor.ContainerCrashed -= OnContainerCrashed;
         _monitor.Dispose();
-        _watchService.Dispose();
-        _composeWatch.Dispose();
         _fastDevReload.Dispose();
         GC.SuppressFinalize(this);
     }

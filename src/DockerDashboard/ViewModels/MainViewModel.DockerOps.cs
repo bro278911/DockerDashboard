@@ -586,13 +586,11 @@ public partial class MainViewModel
         Projects.Remove(project);
 
         var removedServices = project.ComposeFiles.SelectMany(c => c.Services).ToList();
-        foreach (var service in removedServices.Where(s => s.IsWatching && !DockerCliService.IsWslUncPath(s.WorkingDirectory)))
-            _watchService.RemoveWatch(service.WorkingDirectory, service.Name);
         foreach (var dir in removedServices
-                     .Where(s => DockerCliService.IsWslUncPath(s.WorkingDirectory))
+                     .Where(s => s.IsFastDev)
                      .Select(s => s.WorkingDirectory)
                      .Distinct(StringComparer.OrdinalIgnoreCase))
-            UpdateComposeWatchForDirectory(dir);
+            _fastDevReload.Unwatch(dir);
 
         await SaveSettingsAsync();
         UpdateCounts();
@@ -615,36 +613,12 @@ public partial class MainViewModel
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {project.Name} 未偵測到服務（docker compose config 可能失敗）");
         }
 
-        _watchService.ClearAll();
-        _composeWatch.ClearAll();
+        _fastDevReload.ClearAll();
         var settings = await _settingsService.LoadAsync();
-        RestoreWatchStateFromSettings(settings);
+        RestoreFastDevStateFromSettings(settings);
 
         await _monitor.ForceRefreshAsync();
         StatusMessage = "重新掃描完成";
-    }
-
-    [RelayCommand]
-    private async Task ToggleWatchServiceAsync(DockerService? service)
-    {
-        if (service == null || !CanEnableWatch(service)) return;
-
-        service.IsWatching = !service.IsWatching;
-
-        if (DockerCliService.IsWslUncPath(service.WorkingDirectory))
-        {
-            UpdateComposeWatchForDirectory(service.WorkingDirectory);
-        }
-        else if (service.IsWatching)
-        {
-            _watchService.AddWatch(service.WorkingDirectory, service.Name);
-        }
-        else
-        {
-            _watchService.RemoveWatch(service.WorkingDirectory, service.Name);
-        }
-
-        await SaveSettingsAsync();
     }
 
     [RelayCommand]
@@ -690,14 +664,6 @@ public partial class MainViewModel
             configs.Add((service, config));
         }
         if (configs.Count == 0) return;
-
-        // Fast Dev 與 Auto-Watch 互斥
-        foreach (var (service, _) in configs)
-            if (service.IsWatching)
-            {
-                service.IsWatching = false;
-                _watchService.RemoveWatch(service.WorkingDirectory, service.Name);
-            }
 
         StatusMessage = "正在 host build（首次較久）...";
         AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔨 host build {workingDirectory}");
@@ -916,35 +882,15 @@ public partial class MainViewModel
         return true;
     }
 
-    internal static bool CanEnableWatch(DockerService service) => !service.IsFastDev;
-
     internal static void PersistFastDev(AppSettings settings, string serviceKey, FastDevConfig? config, bool enabled)
     {
         settings.FastDevEnabledServiceKeys.Remove(serviceKey);
         settings.FastDevConfigs.RemoveAll(c => c.ServiceKey == serviceKey);
         if (enabled)
         {
-            settings.WatchEnabledServiceKeys.Remove(serviceKey);
             settings.FastDevEnabledServiceKeys.Add(serviceKey);
             if (config != null) settings.FastDevConfigs.Add(config);
         }
-    }
-
-    private void UpdateComposeWatchForDirectory(string workingDirectory)
-    {
-        var watched = Projects
-            .SelectMany(p => p.ComposeFiles)
-            .SelectMany(c => c.Services)
-            .Where(s => s.IsWatching &&
-                        string.Equals(s.WorkingDirectory, workingDirectory, StringComparison.OrdinalIgnoreCase))
-            .Select(s => s.Name)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (!_autoWatchEnabled)
-            watched = [];
-
-        _composeWatch.SetWatchedServices(workingDirectory, watched);
     }
 
     [RelayCommand]
@@ -986,17 +932,7 @@ public partial class MainViewModel
         {
             await _settingsService.SaveAsync(settings);
             ApplyDockerModeSettings(settings);
-            ApplyWatchSettings(settings);
-
-            var wslDirs = Projects
-                .SelectMany(p => p.ComposeFiles)
-                .SelectMany(c => c.Services)
-                .Where(s => DockerCliService.IsWslUncPath(s.WorkingDirectory))
-                .Select(s => s.WorkingDirectory)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            foreach (var dir in wslDirs)
-                UpdateComposeWatchForDirectory(dir);
+            ApplySettings(settings);
 
             await _monitor.StopAsync();
             _monitor.Start(TimeSpan.FromSeconds(settings.PollIntervalSeconds));
