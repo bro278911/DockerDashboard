@@ -254,14 +254,13 @@ public class DockerCliService : IDockerCliService
         return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
     }
 
-    public async Task<(int ExitCode, string Output)> ComposeUpNoDepsAsync(
-        string workingDirectory, string serviceName, Action<string> onOutput,
+    public async Task<(int ExitCode, string Output)> ComposeUpAllAsync(
+        string workingDirectory, Action<string> onOutput,
         CancellationToken ct, string? extraOverrideFile = null)
     {
         var normalizedOverrideFile = NormalizeComposeOverridePath(extraOverrideFile);
-        var args = FastDevComposeGenerator.BuildUpArgs(
-            ComposeArgs, ComposeFileHelper.GetComposeFileArgs(workingDirectory),
-            normalizedOverrideFile, serviceName);
+        var args = FastDevComposeGenerator.BuildUpAllArgs(
+            ComposeArgs, ComposeFileHelper.GetComposeFileArgs(workingDirectory), normalizedOverrideFile);
         return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
     }
 

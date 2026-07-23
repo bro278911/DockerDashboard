@@ -6,8 +6,6 @@ namespace DockerDashboard.Services;
 
 public static class FastDevComposeGenerator
 {
-    public static string ContainerAppDir() => "/app";
-
     public static string ProjectDirRelative(FastDevConfig config)
     {
         var slash = config.CsprojRelativePath.LastIndexOf('/');
@@ -17,12 +15,12 @@ public static class FastDevComposeGenerator
     public static string ContainerDllPath(FastDevConfig config) =>
         $"/app/bin/Debug/{config.Tfm}/{config.AssemblyName}.dll";
 
-    public static string GenerateOverrideYaml(
+    // 單一服務的 override 區塊（不含 services: 標頭），供整包合併
+    public static string ServiceOverrideBlock(
         string serviceName, FastDevConfig config, string projectDirHostPath, string nugetHostPath)
     {
         var dll = ContainerDllPath(config);
         var sb = new StringBuilder();
-        sb.AppendLine("services:");
         sb.AppendLine($"  {serviceName}:");
         sb.AppendLine($"    image: {config.RuntimeImage}");
         sb.AppendLine("    volumes:");
@@ -34,9 +32,19 @@ public static class FastDevComposeGenerator
         return sb.ToString();
     }
 
-    public static List<string> BuildUpArgs(
-        IEnumerable<string> composePrefixArgs, IEnumerable<string> composeFileArgs,
-        string? extraOverrideFile, string serviceName)
+    // 把多個服務區塊合成一份 override（整包一次 up 用）
+    public static string CombineOverride(IEnumerable<string> serviceBlocks)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("services:");
+        foreach (var block in serviceBlocks)
+            sb.Append(block);
+        return sb.ToString();
+    }
+
+    // 整包 up：docker compose -f 原檔... -f fastdev up -d（不帶 service、不 --no-deps）
+    public static List<string> BuildUpAllArgs(
+        IEnumerable<string> composePrefixArgs, IEnumerable<string> composeFileArgs, string? extraOverrideFile)
     {
         var args = new List<string>();
         args.AddRange(composePrefixArgs);
@@ -48,8 +56,6 @@ public static class FastDevComposeGenerator
         }
         args.Add("up");
         args.Add("-d");
-        args.Add("--no-deps");
-        args.Add(serviceName);
         return args;
     }
 }
