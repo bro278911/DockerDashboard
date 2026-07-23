@@ -632,7 +632,11 @@ public partial class MainViewModel
     [RelayCommand]
     private async Task ToggleProjectFastDevAsync(DockerProject? project)
     {
-        if (project == null) return;
+        if (project == null)
+        {
+            StatusMessage = "⚠ 請先在左側選一個專案";
+            return;
+        }
         var services = project.ComposeFiles.SelectMany(c => c.Services).ToList();
         if (services.Any(s => s.IsFastDev))
         {

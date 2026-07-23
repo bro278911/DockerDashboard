@@ -66,6 +66,17 @@
                 <Separator Style="{StaticResource MaterialDesignLightSeparator}" Margin="8,0" />
 
                 <Button Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{Binding ToggleProjectFastDevCommand}"
+                        CommandParameter="{Binding SelectedProject}"
+                        Foreground="#FF9800"
+                        ToolTip="Fast Dev All：對左側選中的專案整包進 host-build dev 模式（改 C# 約 5 秒生效、不重建 image；需 host .NET SDK）。先選一個專案。">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon Kind="FlashOutline" VerticalAlignment="Center" />
+                        <TextBlock Text="Fast Dev All" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <Button Style="{StaticResource MaterialDesignFlatButton}"
                         Command="{Binding ToggleFastDevAutoReloadCommand}"
                         ToolTip="自動熱重載開關：Fast Dev 中改 .cs 是否自動 build+重啟（關掉可攢一批改動再手動重載）">
                     <StackPanel Orientation="Horizontal">

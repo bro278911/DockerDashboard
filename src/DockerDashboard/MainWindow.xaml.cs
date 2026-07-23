@@ -1,4 +1,5 @@
-﻿using System.Windows;
+﻿using System.Linq;
+using System.Windows;
 using System.Windows.Controls;
 using DockerDashboard.Models;
 using DockerDashboard.ViewModels;
@@ -83,12 +84,22 @@ public partial class MainWindow : Window
     private void TreeView_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
         if (e.NewValue is DockerService service)
+        {
             _viewModel.SelectedService = service;
-        else
+            _viewModel.SelectedProject = _viewModel.Projects
+                .FirstOrDefault(p => p.ComposeFiles.Any(c => c.Services.Contains(service)));
+        }
+        else if (e.NewValue is ComposeFile compose)
         {
             _viewModel.SelectedService = null;
-            if (e.NewValue is ComposeFile compose)
-                _viewModel.SelectedComposeFile = compose;
+            _viewModel.SelectedComposeFile = compose;
+            _viewModel.SelectedProject = _viewModel.Projects
+                .FirstOrDefault(p => p.ComposeFiles.Contains(compose));
+        }
+        else if (e.NewValue is DockerProject project)
+        {
+            _viewModel.SelectedService = null;
+            _viewModel.SelectedProject = project;
         }
     }
 

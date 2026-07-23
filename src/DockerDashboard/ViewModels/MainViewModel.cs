@@ -54,6 +54,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private DockerService? _selectedService;
 
     [ObservableProperty]
+    private DockerProject? _selectedProject;
+
+    [ObservableProperty]
     private ComposeFile? _selectedComposeFile;
 
     [ObservableProperty]
