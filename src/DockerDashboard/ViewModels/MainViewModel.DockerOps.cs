@@ -827,13 +827,10 @@ public partial class MainViewModel
         if (existing != null) return existing;
 
         var result = FastDevDetector.Detect(service.WorkingDirectory, service.Name, settings.DefaultRuntimeImage);
-        string? chosen = result.CsprojCandidates.Count switch
-        {
-            1 => result.CsprojCandidates[0],
-            0 => null,
-            _ => PromptCsprojChoice(service.Name, result.CsprojCandidates)
-        };
+        var chosen = PickBestCsproj(service.Name, result.CsprojCandidates);
         if (chosen == null) return null;
+        if (result.CsprojCandidates.Count > 1)
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚙ {service.Name} 有多個 .csproj，自動選用 {chosen}");
 
         var info = FastDevDetector.ReadProjectInfo(service.WorkingDirectory, chosen, "net10.0");
         return new FastDevConfig
@@ -847,14 +844,18 @@ public partial class MainViewModel
         };
     }
 
-    private static string? PromptCsprojChoice(string serviceName, IReadOnlyList<string> candidates)
+    // 多個 .csproj 不彈窗打斷：資料夾名與服務名完全相符優先，其次含服務名，再不然取第一個
+    private static string? PickBestCsproj(string serviceName, IReadOnlyList<string> candidates)
     {
-        var msg = $"{serviceName} 偵測到多個 .csproj，請選擇（輸入編號）：\n\n" +
-                  string.Join("\n", candidates.Select((c, i) => $"{i + 1}. {c}"));
-        var input = Microsoft.VisualBasic.Interaction.InputBox(msg, "選擇 Fast Dev 專案", "1");
-        return int.TryParse(input, out var n) && n >= 1 && n <= candidates.Count
-            ? candidates[n - 1]
-            : null;
+        if (candidates.Count <= 1) return candidates.Count == 1 ? candidates[0] : null;
+
+        var exact = candidates.FirstOrDefault(c =>
+            c.Split('/')[0].Equals(serviceName, StringComparison.OrdinalIgnoreCase));
+        if (exact != null) return exact;
+
+        var contains = candidates.FirstOrDefault(c =>
+            c.Split('/')[0].Contains(serviceName, StringComparison.OrdinalIgnoreCase));
+        return contains ?? candidates[0];
     }
 
     private static string HostDllPath(FastDevConfig config)
