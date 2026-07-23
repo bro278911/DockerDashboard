@@ -145,6 +145,8 @@ public partial class MainViewModel
             return;
         }
 
+        if (!await ConfirmBatchOverridesFastDevAsync()) return;
+
         await RunComposeBatchAsync(
             Projects.SelectMany(p => p.ComposeFiles).ToList(),
             (dir, ct) => _dockerCli.ComposeUpFastWithLogAsync(dir, AppendLog, ct: ct),
@@ -164,6 +166,8 @@ public partial class MainViewModel
             StatusMessage = "⚠ 請先匯入專案資料夾";
             return;
         }
+
+        if (!await ConfirmBatchOverridesFastDevAsync()) return;
 
         await RunComposeBatchAsync(
             Projects.SelectMany(p => p.ComposeFiles).ToList(),
@@ -185,6 +189,8 @@ public partial class MainViewModel
             return;
         }
 
+        if (!await ConfirmBatchOverridesFastDevAsync()) return;
+
         await RunComposeBatchAsync(
             Projects.SelectMany(p => p.ComposeFiles).ToList(),
             (dir, ct) => _dockerCli.ComposeForceRebuildWithLogAsync(dir, AppendLog, ct),
@@ -204,6 +210,8 @@ public partial class MainViewModel
             StatusMessage = "⚠ 請先匯入專案資料夾";
             return;
         }
+
+        if (!await ConfirmBatchOverridesFastDevAsync()) return;
 
         await RunComposeBatchAsync(
             Projects.SelectMany(p => p.ComposeFiles).ToList(),
@@ -1079,6 +1087,31 @@ public partial class MainViewModel
             return p.ExitCode == 0;
         }
         catch { return false; }
+    }
+
+    // 批次操作會用原 image 重建、踩掉 Fast Dev 容器；先提醒並把狀態清乾淨避免顯示與實際不一致
+    private async Task<bool> ConfirmBatchOverridesFastDevAsync()
+    {
+        var fastDevServices = Projects.SelectMany(p => p.ComposeFiles).SelectMany(c => c.Services)
+            .Where(s => s.IsFastDev).ToList();
+        if (fastDevServices.Count == 0) return true;
+
+        var names = string.Join(", ", fastDevServices.Select(s => s.Name));
+        var result = System.Windows.MessageBox.Show(
+            $"下列服務正在 Fast Dev：\n{names}\n\n批次操作會用原本 image 重建、踩掉 Fast Dev（狀態會自動關閉）。要繼續嗎？",
+            "Fast Dev 提醒", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+        if (result != System.Windows.MessageBoxResult.Yes) return false;
+
+        var settings = await _settingsService.LoadAsync();
+        foreach (var service in fastDevServices)
+        {
+            service.IsFastDev = false;
+            FastDevOverrideStore.Delete(service.WatchKey);
+            PersistFastDev(settings, service.WatchKey, null, enabled: false);
+        }
+        await _settingsService.SaveAsync(settings);
+        _fastDevReload.ClearAll();
+        return true;
     }
 
     internal static bool CanEnableWatch(DockerService service) => !service.IsFastDev;
