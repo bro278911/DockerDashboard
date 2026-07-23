@@ -134,23 +134,31 @@ public class FastDevReloadService : IDisposable
             }
         }
 
+        var completed = false;
         try
         {
-            var again = true;
-            while (again)
+            while (true)
             {
                 if (OnSolutionChanged != null)
                     await OnSolutionChanged(solutionDir);
-                lock (_lock) again = _pending.Remove(solutionDir);
+                lock (_lock)
+                {
+                    // pending 判斷與 _running 移除必須同鎖，否則尾端空窗的新觸發會遺失
+                    if (_pending.Remove(solutionDir)) continue;
+                    _running.Remove(solutionDir);
+                    completed = true;
+                    return;
+                }
             }
         }
         finally
         {
-            lock (_lock)
-            {
-                _running.Remove(solutionDir);
-                _pending.Remove(solutionDir);
-            }
+            if (!completed)
+                lock (_lock)
+                {
+                    _running.Remove(solutionDir);
+                    _pending.Remove(solutionDir);
+                }
         }
     }
 

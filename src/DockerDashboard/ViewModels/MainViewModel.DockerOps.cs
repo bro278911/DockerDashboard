@@ -721,9 +721,20 @@ public partial class MainViewModel
             PersistFastDev(settings, service.WatchKey, null, enabled: false);
         }
         await _settingsService.SaveAsync(settings);
-        FastDevOverrideStore.Delete(workingDirectory);
-        _fastDevReload.Unwatch(workingDirectory);
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ↩ Fast Dev 未套用成功，狀態已回復");
+
+        // 同目錄還有既有 Fast Dev 服務：override/watcher 是共用資源，重套用回先前組態，不能直接砍
+        var hasRemaining = AllServices().Any(s => s.IsFastDev &&
+            string.Equals(s.WorkingDirectory, workingDirectory, StringComparison.OrdinalIgnoreCase));
+        if (hasRemaining)
+        {
+            await ApplyFastDevForDirectoryAsync(workingDirectory, settings);
+        }
+        else
+        {
+            FastDevOverrideStore.Delete(workingDirectory);
+            _fastDevReload.Unwatch(workingDirectory);
+        }
     }
 
     private async Task DisableFastDevServicesAsync(IReadOnlyList<DockerService> services)
