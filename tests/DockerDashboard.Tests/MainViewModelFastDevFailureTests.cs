@@ -162,7 +162,7 @@ public class MainViewModelFastDevFailureTests
                 {
                     ServiceKey = service.WatchKey,
                     CsprojRelativePath = "Api.csproj",
-                    SdkImage = "mcr.microsoft.com/dotnet/sdk:10.0",
+                    RuntimeImage = "mcr.microsoft.com/dotnet/sdk:10.0",
                     SrcRoot = service.WorkingDirectory,
                 },
             ],

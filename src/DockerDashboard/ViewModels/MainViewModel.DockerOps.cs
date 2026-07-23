@@ -946,7 +946,7 @@ public partial class MainViewModel
         {
             ServiceKey = service.WatchKey,
             CsprojRelativePath = chosen,
-            SdkImage = result.SdkImage,
+            RuntimeImage = result.SdkImage,
             SrcRoot = service.WorkingDirectory
         };
     }

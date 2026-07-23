@@ -10,7 +10,7 @@ public class FastDevComposeGeneratorTests
     {
         ServiceKey = "key::orderbackend",
         CsprojRelativePath = "OrderBackend/OrderBackend.csproj",
-        SdkImage = "mcr.microsoft.com/dotnet/sdk:10.0",
+        RuntimeImage = "mcr.microsoft.com/dotnet/sdk:10.0",
         SrcRoot = @"D:\CMPBackend"
     };
 

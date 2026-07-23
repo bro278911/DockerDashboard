@@ -23,7 +23,7 @@ public static class FastDevComposeGenerator
         var sb = new StringBuilder();
         sb.AppendLine("services:");
         sb.AppendLine($"  {serviceName}:");
-        sb.AppendLine($"    image: {config.SdkImage}");
+        sb.AppendLine($"    image: {config.RuntimeImage}");
         sb.AppendLine("    user: root");
         sb.AppendLine($"    working_dir: {ContainerWorkingDir(config)}");
         sb.AppendLine("    volumes:");

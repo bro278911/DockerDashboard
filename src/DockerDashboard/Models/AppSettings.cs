@@ -25,4 +25,5 @@ public class AppSettings
     public List<string> FastDevEnabledServiceKeys { get; set; } = [];
     public List<FastDevConfig> FastDevConfigs { get; set; } = [];
     public string DefaultSdkImage { get; set; } = "mcr.microsoft.com/dotnet/sdk:10.0";
+    public string DefaultRuntimeImage { get; set; } = "mcr.microsoft.com/dotnet/aspnet:10.0";
 }
