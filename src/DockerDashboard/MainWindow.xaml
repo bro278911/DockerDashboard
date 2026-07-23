@@ -384,6 +384,26 @@
                                                     <materialDesign:PackIcon Kind="Eye" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
+                                            <MenuItem Header="Fast Dev 開關"
+                                                      Command="{Binding Data.ToggleFastDevServiceCommand, Source={StaticResource Proxy}}"
+                                                      CommandParameter="{Binding}"
+                                                      ToolTip="Fast Dev：啟用後改 C# 原始碼自動熱重載，不重建 image（需 .NET SDK 服務）">
+                                                <MenuItem.Icon>
+                                                    <materialDesign:PackIcon>
+                                                        <materialDesign:PackIcon.Style>
+                                                            <Style TargetType="materialDesign:PackIcon">
+                                                                <Setter Property="Kind" Value="FlashOutline" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsFastDev}" Value="True">
+                                                                        <Setter Property="Kind" Value="Flash" />
+                                                                        <Setter Property="Foreground" Value="Orange" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </materialDesign:PackIcon.Style>
+                                                    </materialDesign:PackIcon>
+                                                </MenuItem.Icon>
+                                            </MenuItem>
                                             <Separator />
                                             <MenuItem Header="查看日誌"
                                                       Command="{Binding Data.ViewLogsCommand, Source={StaticResource Proxy}}"
@@ -491,6 +511,24 @@
                                     </Style>
                                 </Button.Style>
                                 <materialDesign:PackIcon Kind="Eye" />
+                            </Button>
+                            <Button Style="{StaticResource MaterialDesignIconButton}"
+                                    Command="{Binding ToggleFastDevServiceCommand}"
+                                    CommandParameter="{Binding SelectedService}"
+                                    ToolTip="Fast Dev：啟用後改 C# 原始碼自動熱重載，不重建 image（需 .NET SDK 服務）">
+                                <materialDesign:PackIcon>
+                                    <materialDesign:PackIcon.Style>
+                                        <Style TargetType="materialDesign:PackIcon">
+                                            <Setter Property="Kind" Value="FlashOutline" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SelectedService.IsFastDev}" Value="True">
+                                                    <Setter Property="Kind" Value="Flash" />
+                                                    <Setter Property="Foreground" Value="Orange" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </materialDesign:PackIcon.Style>
+                                </materialDesign:PackIcon>
                             </Button>
                         </StackPanel>
                     </Grid>
