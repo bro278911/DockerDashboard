@@ -14,16 +14,14 @@ public class FastDevDetectorTests
     }
 
     [Fact]
-    public void Detect_單一符合服務名的csproj_自動採用並回相對POSIX路徑()
+    public void Detect_單一符合服務名的csproj_自動採用()
     {
         var root = NewTempDir();
         try
         {
             Directory.CreateDirectory(Path.Combine(root, "OrderBackend"));
             File.WriteAllText(Path.Combine(root, "OrderBackend", "OrderBackend.csproj"), "<Project/>");
-
-            var result = FastDevDetector.Detect(root, "orderbackend", "sdk:default");
-
+            var result = FastDevDetector.Detect(root, "orderbackend", "aspnet:default");
             Assert.Single(result.CsprojCandidates);
             Assert.Equal("OrderBackend/OrderBackend.csproj", result.CsprojCandidates[0]);
         }
@@ -31,7 +29,7 @@ public class FastDevDetectorTests
     }
 
     [Fact]
-    public void Detect_讀Dockerfile的sdk版本()
+    public void Detect_讀Dockerfile的aspnet版本與solution()
     {
         var root = NewTempDir();
         try
@@ -40,44 +38,57 @@ public class FastDevDetectorTests
             File.WriteAllText(Path.Combine(root, "OrderBackend", "OrderBackend.csproj"), "<Project/>");
             File.WriteAllText(Path.Combine(root, "OrderBackend", "Dockerfile"),
                 "FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base\nFROM mcr.microsoft.com/dotnet/sdk:10.0 AS build\n");
-
-            var result = FastDevDetector.Detect(root, "orderbackend", "sdk:default");
-
-            Assert.Equal("mcr.microsoft.com/dotnet/sdk:10.0", result.SdkImage);
+            File.WriteAllText(Path.Combine(root, "CMPBackend.sln"), "Microsoft Visual Studio Solution File");
+            var result = FastDevDetector.Detect(root, "orderbackend", "aspnet:default");
+            Assert.Equal("mcr.microsoft.com/dotnet/aspnet:10.0", result.RuntimeImage);
+            Assert.EndsWith("CMPBackend.sln", result.SolutionPath);
         }
         finally { Directory.Delete(root, true); }
     }
 
     [Fact]
-    public void Detect_無Dockerfile_用預設SDK()
+    public void Detect_無Dockerfile_用預設runtime且solution為null()
     {
         var root = NewTempDir();
         try
         {
             Directory.CreateDirectory(Path.Combine(root, "OrderBackend"));
             File.WriteAllText(Path.Combine(root, "OrderBackend", "OrderBackend.csproj"), "<Project/>");
-
-            var result = FastDevDetector.Detect(root, "orderbackend", "sdk:default");
-
-            Assert.Equal("sdk:default", result.SdkImage);
+            var result = FastDevDetector.Detect(root, "orderbackend", "aspnet:default");
+            Assert.Equal("aspnet:default", result.RuntimeImage);
+            Assert.Null(result.SolutionPath);
         }
         finally { Directory.Delete(root, true); }
     }
 
     [Fact]
-    public void Detect_多個csproj且無一符合服務名_全列為候選()
+    public void ReadProjectInfo_讀TFM與AssemblyName()
     {
         var root = NewTempDir();
         try
         {
-            Directory.CreateDirectory(Path.Combine(root, "Foo"));
-            Directory.CreateDirectory(Path.Combine(root, "Bar"));
-            File.WriteAllText(Path.Combine(root, "Foo", "Foo.csproj"), "<Project/>");
-            File.WriteAllText(Path.Combine(root, "Bar", "Bar.csproj"), "<Project/>");
+            Directory.CreateDirectory(Path.Combine(root, "OrderBackend"));
+            File.WriteAllText(Path.Combine(root, "OrderBackend", "OrderBackend.csproj"),
+                "<Project Sdk=\"Microsoft.NET.Sdk.Web\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><AssemblyName>OrderApi</AssemblyName></PropertyGroup></Project>");
+            var info = FastDevDetector.ReadProjectInfo(root, "OrderBackend/OrderBackend.csproj", "net10.0");
+            Assert.Equal("net10.0", info.Tfm);
+            Assert.Equal("OrderApi", info.AssemblyName);
+        }
+        finally { Directory.Delete(root, true); }
+    }
 
-            var result = FastDevDetector.Detect(root, "orderbackend", "sdk:default");
-
-            Assert.Equal(2, result.CsprojCandidates.Count);
+    [Fact]
+    public void ReadProjectInfo_無AssemblyName時用csproj檔名()
+    {
+        var root = NewTempDir();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "OrderBackend"));
+            File.WriteAllText(Path.Combine(root, "OrderBackend", "OrderBackend.csproj"),
+                "<Project><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
+            var info = FastDevDetector.ReadProjectInfo(root, "OrderBackend/OrderBackend.csproj", "net9.0");
+            Assert.Equal("net10.0", info.Tfm);
+            Assert.Equal("OrderBackend", info.AssemblyName);
         }
         finally { Directory.Delete(root, true); }
     }

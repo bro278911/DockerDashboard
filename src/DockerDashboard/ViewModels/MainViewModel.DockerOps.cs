@@ -933,7 +933,7 @@ public partial class MainViewModel
         var existing = settings.FastDevConfigs.FirstOrDefault(c => c.ServiceKey == service.WatchKey);
         if (existing != null) return existing;
 
-        var result = FastDevDetector.Detect(service.WorkingDirectory, service.Name, settings.DefaultSdkImage);
+        var result = FastDevDetector.Detect(service.WorkingDirectory, service.Name, settings.DefaultRuntimeImage);
         string? chosen = result.CsprojCandidates.Count switch
         {
             1 => result.CsprojCandidates[0],
@@ -946,7 +946,7 @@ public partial class MainViewModel
         {
             ServiceKey = service.WatchKey,
             CsprojRelativePath = chosen,
-            RuntimeImage = result.SdkImage,
+            RuntimeImage = result.RuntimeImage,
             SrcRoot = service.WorkingDirectory
         };
     }

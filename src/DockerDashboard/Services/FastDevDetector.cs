@@ -6,19 +6,28 @@ using System.Text.RegularExpressions;
 
 namespace DockerDashboard.Services;
 
-public sealed record FastDevDetectionResult(IReadOnlyList<string> CsprojCandidates, string SdkImage);
+public sealed record FastDevDetectionResult(
+    IReadOnlyList<string> CsprojCandidates, string RuntimeImage, string? SolutionPath);
+
+public sealed record FastDevProjectInfo(string Tfm, string AssemblyName);
 
 public static class FastDevDetector
 {
-    private static readonly Regex SdkFromRegex = new(
-        @"FROM\s+(mcr\.microsoft\.com/dotnet/sdk:[^\s]+)",
+    private static readonly Regex AspnetFromRegex = new(
+        @"FROM\s+(mcr\.microsoft\.com/dotnet/aspnet:[^\s]+)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex TfmRegex = new(
+        @"<TargetFramework>\s*([^<\s]+)\s*</TargetFramework>",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex AssemblyNameRegex = new(
+        @"<AssemblyName>\s*([^<\s]+)\s*</AssemblyName>",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static FastDevDetectionResult Detect(
-        string workingDirectory, string serviceName, string defaultSdkImage)
+        string workingDirectory, string serviceName, string defaultRuntimeImage)
     {
         if (!Directory.Exists(workingDirectory))
-            return new FastDevDetectionResult([], defaultSdkImage);
+            return new FastDevDetectionResult([], defaultRuntimeImage, null);
 
         var allCsproj = Directory
             .EnumerateFiles(workingDirectory, "*.csproj", SearchOption.AllDirectories)
@@ -31,9 +40,29 @@ public static class FastDevDetector
             .ToList();
 
         var candidates = nameMatched.Count == 1 ? nameMatched : allCsproj;
+        var runtimeImage = DetectRuntimeImage(workingDirectory, candidates, defaultRuntimeImage);
+        var solution = Directory
+            .EnumerateFiles(workingDirectory, "*.sln", SearchOption.TopDirectoryOnly)
+            .FirstOrDefault();
 
-        var sdkImage = DetectSdkImage(workingDirectory, candidates, defaultSdkImage);
-        return new FastDevDetectionResult(candidates, sdkImage);
+        return new FastDevDetectionResult(candidates, runtimeImage, solution);
+    }
+
+    public static FastDevProjectInfo ReadProjectInfo(
+        string workingDirectory, string csprojRelativePath, string defaultTfm)
+    {
+        var full = Path.Combine(workingDirectory, csprojRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        var tfm = defaultTfm;
+        var assembly = Path.GetFileNameWithoutExtension(full);
+        if (File.Exists(full))
+        {
+            var text = File.ReadAllText(full);
+            var tfmMatch = TfmRegex.Match(text);
+            if (tfmMatch.Success) tfm = tfmMatch.Groups[1].Value;
+            var asmMatch = AssemblyNameRegex.Match(text);
+            if (asmMatch.Success) assembly = asmMatch.Groups[1].Value;
+        }
+        return new FastDevProjectInfo(tfm, assembly);
     }
 
     private static bool IsInIgnoredDir(string relativePath)
@@ -48,18 +77,19 @@ public static class FastDevDetector
     private static string ToPosixRelative(string root, string fullPath) =>
         Path.GetRelativePath(root, fullPath).Replace('\\', '/');
 
-    private static string DetectSdkImage(
-        string workingDirectory, IReadOnlyList<string> candidates, string defaultSdkImage)
+    private static string DetectRuntimeImage(
+        string workingDirectory, IReadOnlyList<string> candidates, string defaultRuntimeImage)
     {
         foreach (var rel in candidates)
         {
-            var projectDir = Path.GetDirectoryName(Path.Combine(workingDirectory, rel.Replace('/', Path.DirectorySeparatorChar)));
+            var projectDir = Path.GetDirectoryName(
+                Path.Combine(workingDirectory, rel.Replace('/', Path.DirectorySeparatorChar)));
             if (projectDir == null) continue;
             var dockerfile = Path.Combine(projectDir, "Dockerfile");
             if (!File.Exists(dockerfile)) continue;
-            var match = SdkFromRegex.Match(File.ReadAllText(dockerfile));
+            var match = AspnetFromRegex.Match(File.ReadAllText(dockerfile));
             if (match.Success) return match.Groups[1].Value;
         }
-        return defaultSdkImage;
+        return defaultRuntimeImage;
     }
 }
