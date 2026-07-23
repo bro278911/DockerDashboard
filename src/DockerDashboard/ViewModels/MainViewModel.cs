@@ -240,7 +240,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 foreach (var service in compose.Services)
                 {
-                    service.IsWatching = settings.WatchEnabledServiceKeys.Contains(service.WatchKey);
+                    service.IsFastDev = settings.FastDevEnabledServiceKeys.Contains(service.WatchKey);
+                    service.IsWatching = ShouldRestoreWatch(settings, service.WatchKey);
                     if (!service.IsWatching) continue;
 
                     if (DockerCliService.IsWslUncPath(service.WorkingDirectory))
@@ -254,6 +255,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         foreach (var dir in wslDirs)
             UpdateComposeWatchForDirectory(dir);
     }
+
+    internal static bool ShouldRestoreWatch(AppSettings settings, string serviceKey) =>
+        !settings.FastDevEnabledServiceKeys.Contains(serviceKey) &&
+        settings.WatchEnabledServiceKeys.Contains(serviceKey);
 
     private async Task OnAutoRebuildTriggeredAsync(string workingDirectory, string serviceName)
     {

@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="DockerDashboard.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Include="Assets\pooh.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

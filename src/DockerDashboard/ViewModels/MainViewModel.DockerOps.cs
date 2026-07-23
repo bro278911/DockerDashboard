@@ -817,7 +817,7 @@ public partial class MainViewModel
     [RelayCommand]
     private async Task ToggleWatchServiceAsync(DockerService? service)
     {
-        if (service == null) return;
+        if (service == null || !CanEnableWatch(service)) return;
 
         service.IsWatching = !service.IsWatching;
 
@@ -835,6 +835,155 @@ public partial class MainViewModel
         }
 
         await SaveSettingsAsync();
+    }
+
+    [RelayCommand]
+    private async Task ToggleFastDevServiceAsync(DockerService? service)
+    {
+        if (service == null) return;
+
+        if (service.IsFastDev)
+        {
+            await DisableFastDevAsync(service);
+            return;
+        }
+
+        var settings = await _settingsService.LoadAsync();
+        var config = ResolveFastDevConfig(service, settings);
+        if (config == null)
+        {
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {service.Name} 找不到 .csproj，無法啟用 Fast Dev");
+            return;
+        }
+
+        // Fast Dev 與 Auto-Watch/compose-watch 互斥
+        var wasWatching = service.IsWatching;
+        if (wasWatching)
+        {
+            service.IsWatching = false;
+            _watchService.RemoveWatch(service.WorkingDirectory, service.Name);
+            UpdateComposeWatchForDirectory(service.WorkingDirectory);
+        }
+
+        var (srcHost, nugetHost) = ResolveFastDevHostPaths(config);
+        var yaml = FastDevComposeGenerator.GenerateOverrideYaml(service.Name, config, srcHost, nugetHost);
+        var overridePath = FastDevOverrideStore.Write(service.WatchKey, yaml);
+
+        service.IsFastDev = true;
+        StatusMessage = $"正在啟用 {service.Name} Fast Dev...";
+        AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚡ 啟用 Fast Dev：{service.Name}（dotnet watch 熱重載）");
+
+        var (exitCode, _) = await _dockerCli.ComposeUpNoDepsAsync(
+            service.WorkingDirectory, service.Name, AppendLog, CancellationToken.None, overridePath);
+
+        if (exitCode != 0)
+        {
+            service.IsFastDev = false;
+            FastDevOverrideStore.Delete(service.WatchKey);
+            if (wasWatching)
+            {
+                service.IsWatching = true;
+                if (DockerCliService.IsWslUncPath(service.WorkingDirectory))
+                    UpdateComposeWatchForDirectory(service.WorkingDirectory);
+                else
+                    _watchService.AddWatch(service.WorkingDirectory, service.Name);
+            }
+            StatusMessage = $"⚠ {service.Name} Fast Dev 啟用失敗";
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ Fast Dev 啟用失敗 (exit {exitCode})");
+        }
+        else
+        {
+            PersistFastDev(settings, service.WatchKey, config, enabled: true);
+            await _settingsService.SaveAsync(settings);
+            StatusMessage = $"✅ {service.Name} 已進入 Fast Dev";
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ Fast Dev 就緒：改 .cs 即熱重載（首次 restore 稍慢）");
+        }
+
+        await _monitor.ForceRefreshAsync();
+    }
+
+    private async Task DisableFastDevAsync(DockerService service)
+    {
+        StatusMessage = $"正在關閉 {service.Name} Fast Dev...";
+        AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ 關閉 Fast Dev：{service.Name}（換回原 image）");
+
+        var (exitCode, _) = await _dockerCli.ComposeUpNoDepsAsync(
+            service.WorkingDirectory, service.Name, AppendLog, CancellationToken.None);
+
+        if (exitCode == 0)
+        {
+            service.IsFastDev = false;
+            FastDevOverrideStore.Delete(service.WatchKey);
+
+            var settings = await _settingsService.LoadAsync();
+            PersistFastDev(settings, service.WatchKey, null, enabled: false);
+            await _settingsService.SaveAsync(settings);
+            StatusMessage = $"✅ {service.Name} 已離開 Fast Dev";
+        }
+        else
+        {
+            StatusMessage = $"⚠ {service.Name} 還原可能失敗";
+        }
+
+        await _monitor.ForceRefreshAsync();
+    }
+
+    private FastDevConfig? ResolveFastDevConfig(DockerService service, AppSettings settings)
+    {
+        var existing = settings.FastDevConfigs.FirstOrDefault(c => c.ServiceKey == service.WatchKey);
+        if (existing != null) return existing;
+
+        var result = FastDevDetector.Detect(service.WorkingDirectory, service.Name, settings.DefaultSdkImage);
+        string? chosen = result.CsprojCandidates.Count switch
+        {
+            1 => result.CsprojCandidates[0],
+            0 => null,
+            _ => PromptCsprojChoice(service.Name, result.CsprojCandidates)
+        };
+        if (chosen == null) return null;
+
+        return new FastDevConfig
+        {
+            ServiceKey = service.WatchKey,
+            CsprojRelativePath = chosen,
+            SdkImage = result.SdkImage,
+            SrcRoot = service.WorkingDirectory
+        };
+    }
+
+    private static string? PromptCsprojChoice(string serviceName, IReadOnlyList<string> candidates)
+    {
+        var msg = $"{serviceName} 偵測到多個 .csproj，請選擇（輸入編號）：\n\n" +
+                  string.Join("\n", candidates.Select((c, i) => $"{i + 1}. {c}"));
+        var input = Microsoft.VisualBasic.Interaction.InputBox(msg, "選擇 Fast Dev 專案", "1");
+        return int.TryParse(input, out var n) && n >= 1 && n <= candidates.Count
+            ? candidates[n - 1]
+            : null;
+    }
+
+    private (string SrcHost, string NugetHost) ResolveFastDevHostPaths(FastDevConfig config)
+    {
+        var nuget = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
+
+        if (DockerCliService.IsWslUncPath(config.SrcRoot))
+            return (DockerCliService.ConvertToWslPath(config.SrcRoot), DockerCliService.ConvertToWslPath(nuget));
+
+        return (config.SrcRoot, nuget);
+    }
+
+    internal static bool CanEnableWatch(DockerService service) => !service.IsFastDev;
+
+    internal static void PersistFastDev(AppSettings settings, string serviceKey, FastDevConfig? config, bool enabled)
+    {
+        settings.FastDevEnabledServiceKeys.Remove(serviceKey);
+        settings.FastDevConfigs.RemoveAll(c => c.ServiceKey == serviceKey);
+        if (enabled)
+        {
+            settings.WatchEnabledServiceKeys.Remove(serviceKey);
+            settings.FastDevEnabledServiceKeys.Add(serviceKey);
+            if (config != null) settings.FastDevConfigs.Add(config);
+        }
     }
 
     private void UpdateComposeWatchForDirectory(string workingDirectory)
