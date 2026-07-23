@@ -840,7 +840,10 @@ public partial class MainViewModel
         foreach (var key in changedKeys)
         {
             var service = fastDevServices.First(s => s.WatchKey == key);
-            var container = string.IsNullOrEmpty(service.ContainerName) ? service.Name : service.ContainerName;
+            // compose 多半不設 container_name（實際名 <project>-<service>-1），用 monitor 回填的 ContainerId 最保險
+            var container = !string.IsNullOrEmpty(service.ContainerId) ? service.ContainerId
+                : !string.IsNullOrEmpty(service.ContainerName) ? service.ContainerName
+                : service.Name;
             AppendLog($"[{DateTime.Now:HH:mm:ss}] ♻ 重啟 {service.Name}");
             await _dockerCli.RestartContainerAsync(container, AppendLog, CancellationToken.None);
         }
