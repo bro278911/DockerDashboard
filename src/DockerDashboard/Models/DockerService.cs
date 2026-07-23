@@ -30,6 +30,9 @@ public partial class DockerService : ObservableObject
     [ObservableProperty]
     private bool _isWatching;
 
+    [ObservableProperty]
+    private bool _isFastDev;
+
     public string ComposeFilePath { get; set; } = string.Empty;
 
     public string WorkingDirectory { get; set; } = string.Empty;

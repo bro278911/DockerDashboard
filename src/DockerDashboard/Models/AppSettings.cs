@@ -22,4 +22,7 @@ public class AppSettings
     public int BuildKitParallelism { get; set; } = 0;
     public int StartupParallelism { get; set; } = 3;
     public bool AutoCheckUpdate { get; set; } = true;
+    public List<string> FastDevEnabledServiceKeys { get; set; } = [];
+    public List<FastDevConfig> FastDevConfigs { get; set; } = [];
+    public string DefaultSdkImage { get; set; } = "mcr.microsoft.com/dotnet/sdk:10.0";
 }
