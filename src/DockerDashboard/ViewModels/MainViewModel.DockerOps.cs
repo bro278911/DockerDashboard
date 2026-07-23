@@ -145,7 +145,7 @@ public partial class MainViewModel
             return;
         }
 
-        if (!await ConfirmBatchOverridesFastDevAsync()) return;
+        if (!await ConfirmBatchOverridesFastDevAsync(AllServices())) return;
 
         await RunComposeBatchAsync(
             Projects.SelectMany(p => p.ComposeFiles).ToList(),
@@ -167,7 +167,7 @@ public partial class MainViewModel
             return;
         }
 
-        if (!await ConfirmBatchOverridesFastDevAsync()) return;
+        if (!await ConfirmBatchOverridesFastDevAsync(AllServices())) return;
 
         await RunComposeBatchAsync(
             Projects.SelectMany(p => p.ComposeFiles).ToList(),
@@ -184,6 +184,7 @@ public partial class MainViewModel
     private async Task ProjectUpAsync(DockerProject? project)
     {
         if (project == null) return;
+        if (!await ConfirmBatchOverridesFastDevAsync(ProjectServices(project))) return;
 
         await RunComposeBatchAsync(
             project.ComposeFiles.ToList(),
@@ -200,6 +201,7 @@ public partial class MainViewModel
     private async Task ProjectDownAsync(DockerProject? project)
     {
         if (project == null) return;
+        if (!await ConfirmBatchOverridesFastDevAsync(ProjectServices(project))) return;
 
         await RunComposeBatchAsync(
             project.ComposeFiles.ToList(),
@@ -585,12 +587,22 @@ public partial class MainViewModel
 
         Projects.Remove(project);
 
-        var removedServices = project.ComposeFiles.SelectMany(c => c.Services).ToList();
-        foreach (var dir in removedServices
-                     .Where(s => s.IsFastDev)
-                     .Select(s => s.WorkingDirectory)
-                     .Distinct(StringComparer.OrdinalIgnoreCase))
-            _fastDevReload.Unwatch(dir);
+        var removedFastDev = ProjectServices(project).Where(s => s.IsFastDev).ToList();
+        if (removedFastDev.Count > 0)
+        {
+            var settings = await _settingsService.LoadAsync();
+            foreach (var service in removedFastDev)
+                PersistFastDev(settings, service.WatchKey, null, enabled: false);
+            await _settingsService.SaveAsync(settings);
+
+            foreach (var dir in removedFastDev
+                         .Select(s => s.WorkingDirectory)
+                         .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                FastDevOverrideStore.Delete(dir);
+                _fastDevReload.Unwatch(dir);
+            }
+        }
 
         await SaveSettingsAsync();
         UpdateCounts();
@@ -684,7 +696,7 @@ public partial class MainViewModel
         }
 
         var settings = await _settingsService.LoadAsync();
-        var enabledAny = false;
+        var enabled = new List<DockerService>();
         foreach (var service in services)
         {
             var config = ResolveFastDevConfig(service, settings);
@@ -695,12 +707,23 @@ public partial class MainViewModel
             }
             service.IsFastDev = true;
             PersistFastDev(settings, service.WatchKey, config, enabled: true);
-            enabledAny = true;
+            enabled.Add(service);
         }
-        if (!enabledAny) return;
+        if (enabled.Count == 0) return;
 
         await _settingsService.SaveAsync(settings);
-        await ApplyFastDevForDirectoryAsync(workingDirectory, settings);
+        if (await ApplyFastDevForDirectoryAsync(workingDirectory, settings)) return;
+
+        // build/up 失敗或取消：回滾，避免 UI 與持久化狀態指向不存在的 Fast Dev 容器
+        foreach (var service in enabled)
+        {
+            service.IsFastDev = false;
+            PersistFastDev(settings, service.WatchKey, null, enabled: false);
+        }
+        await _settingsService.SaveAsync(settings);
+        FastDevOverrideStore.Delete(workingDirectory);
+        _fastDevReload.Unwatch(workingDirectory);
+        AppendLog($"[{DateTime.Now:HH:mm:ss}] ↩ Fast Dev 未套用成功，狀態已回復");
     }
 
     private async Task DisableFastDevServicesAsync(IReadOnlyList<DockerService> services)
@@ -718,7 +741,8 @@ public partial class MainViewModel
     }
 
     // 依目錄目前所有 fastdev 服務產一份合併 override、一次整包 up；無 fastdev 服務則還原成原 image
-    private async Task ApplyFastDevForDirectoryAsync(string workingDirectory, AppSettings settings)
+    // 回傳是否完整套用成功（取消或任一步失敗 = false），供啟用端決定是否回滾
+    private async Task<bool> ApplyFastDevForDirectoryAsync(string workingDirectory, AppSettings settings)
     {
         var cts = new CancellationTokenSource();
         _operationCts?.Dispose();
@@ -742,7 +766,7 @@ public partial class MainViewModel
                 var (revertExit, _) = await _dockerCli.ComposeUpAllAsync(workingDirectory, AppendLog, ct);
                 if (!ct.IsCancellationRequested)
                     StatusMessage = revertExit == 0 ? "✅ 已離開 Fast Dev" : "⚠ 還原可能失敗";
-                return;
+                return revertExit == 0 && !ct.IsCancellationRequested;
             }
 
             var items = new List<(DockerService Service, FastDevConfig Config)>();
@@ -751,7 +775,7 @@ public partial class MainViewModel
                 var config = settings.FastDevConfigs.FirstOrDefault(c => c.ServiceKey == service.WatchKey);
                 if (config != null) items.Add((service, config));
             }
-            if (items.Count == 0) return;
+            if (items.Count == 0) return false;
 
             StatusMessage = "正在 host build（首次較久，可取消）...";
             AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔨 host build {workingDirectory}");
@@ -760,12 +784,12 @@ public partial class MainViewModel
                 .Select(i => Path.Combine(workingDirectory, i.Config.CsprojRelativePath.Replace('/', Path.DirectorySeparatorChar)))
                 .ToList();
             var (buildExit, _) = await _hostBuild.BuildAsync(detection.SolutionPath, fallbackProjects, AppendLog, ct);
-            if (ct.IsCancellationRequested) return;
+            if (ct.IsCancellationRequested) return false;
             if (buildExit != 0)
             {
                 StatusMessage = "⚠ host build 失敗";
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ host build 失敗 (exit {buildExit})");
-                return;
+                return false;
             }
 
             var blocks = items.Select(i =>
@@ -778,14 +802,15 @@ public partial class MainViewModel
 
             StatusMessage = "正在整包啟動 Fast Dev...";
             var (upExit, _) = await _dockerCli.ComposeUpAllAsync(workingDirectory, AppendLog, ct, overridePath);
-            if (ct.IsCancellationRequested) return;
+            if (ct.IsCancellationRequested) return false;
             if (upExit != 0)
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ Fast Dev 啟動失敗 (exit {upExit})");
-            else
             {
-                _fastDevReload.Watch(workingDirectory);
-                StatusMessage = "✅ Fast Dev 就緒（改 .cs 約 5 秒生效）";
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ Fast Dev 啟動失敗 (exit {upExit})");
+                return false;
             }
+            _fastDevReload.Watch(workingDirectory);
+            StatusMessage = "✅ Fast Dev 就緒（改 .cs 約 5 秒生效）";
+            return true;
         }
         finally
         {
@@ -925,7 +950,8 @@ public partial class MainViewModel
         var nuget = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
 
-        if (DockerCliService.IsWslUncPath(config.SrcRoot))
+        // WSL2 模式下 compose 在 WSL 內解析 YAML，Windows 磁碟路徑也要轉 /mnt/<drive>/...
+        if (_dockerCli.DockerMode == DockerMode.Wsl2 || DockerCliService.IsWslUncPath(config.SrcRoot))
             return (DockerCliService.ConvertToWslPath(appHost), DockerCliService.ConvertToWslPath(nuget));
 
         return (appHost, nuget);
@@ -952,11 +978,16 @@ public partial class MainViewModel
         catch { return false; }
     }
 
-    // 批次操作會用原 image 重建、踩掉 Fast Dev 容器；先提醒並把狀態清乾淨避免顯示與實際不一致
-    private async Task<bool> ConfirmBatchOverridesFastDevAsync()
+    private List<DockerService> AllServices() =>
+        Projects.SelectMany(p => p.ComposeFiles).SelectMany(c => c.Services).ToList();
+
+    private static List<DockerService> ProjectServices(DockerProject project) =>
+        project.ComposeFiles.SelectMany(c => c.Services).ToList();
+
+    // 批次操作會用原 image 重建、踩掉 Fast Dev 容器；先提醒並把範圍內狀態清乾淨避免顯示與實際不一致
+    private async Task<bool> ConfirmBatchOverridesFastDevAsync(IReadOnlyList<DockerService> scope)
     {
-        var fastDevServices = Projects.SelectMany(p => p.ComposeFiles).SelectMany(c => c.Services)
-            .Where(s => s.IsFastDev).ToList();
+        var fastDevServices = scope.Where(s => s.IsFastDev).ToList();
         if (fastDevServices.Count == 0) return true;
 
         var names = string.Join(", ", fastDevServices.Select(s => s.Name));
@@ -969,11 +1000,17 @@ public partial class MainViewModel
         foreach (var service in fastDevServices)
         {
             service.IsFastDev = false;
-            FastDevOverrideStore.Delete(service.WatchKey);
             PersistFastDev(settings, service.WatchKey, null, enabled: false);
         }
         await _settingsService.SaveAsync(settings);
-        _fastDevReload.ClearAll();
+
+        // override 檔與 watcher 以 WorkingDirectory 為 key，不能拿 WatchKey 刪
+        foreach (var dir in fastDevServices.Select(s => s.WorkingDirectory)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            FastDevOverrideStore.Delete(dir);
+            _fastDevReload.Unwatch(dir);
+        }
         return true;
     }
 

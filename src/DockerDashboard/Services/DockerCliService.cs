@@ -236,10 +236,16 @@ public class DockerCliService : IDockerCliService
         return new ProcessStream(process);
     }
 
-    private List<string> BuildComposeArgs(string workingDirectory, IEnumerable<string> commandArgs)
+    private List<string> BuildComposeArgs(
+        string workingDirectory, IEnumerable<string> commandArgs, string? extraOverrideFile = null)
     {
         var args = new List<string>(ComposeArgs);
         args.AddRange(ComposeFileHelper.GetComposeFileArgs(workingDirectory));
+        if (!string.IsNullOrEmpty(extraOverrideFile))
+        {
+            args.Add("-f");
+            args.Add(extraOverrideFile);
+        }
         args.AddRange(commandArgs);
         return args;
     }
@@ -258,9 +264,9 @@ public class DockerCliService : IDockerCliService
         string workingDirectory, Action<string> onOutput,
         CancellationToken ct, string? extraOverrideFile = null)
     {
-        var normalizedOverrideFile = NormalizeComposeOverridePath(extraOverrideFile);
-        var args = FastDevComposeGenerator.BuildUpAllArgs(
-            ComposeArgs, ComposeFileHelper.GetComposeFileArgs(workingDirectory), normalizedOverrideFile);
+        // 整包 up：-f 原檔... -f fastdev up -d（不帶 service、不 --no-deps）
+        var args = BuildComposeArgs(
+            workingDirectory, ["up", "-d"], NormalizeComposeOverridePath(extraOverrideFile));
         return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
     }
 

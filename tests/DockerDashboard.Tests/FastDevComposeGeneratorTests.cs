@@ -38,8 +38,8 @@ public class FastDevComposeGeneratorTests
         Assert.DoesNotContain("services:", block);
         Assert.Contains("  orderbackend:", block);
         Assert.Contains("image: mcr.microsoft.com/dotnet/aspnet:10.0", block);
-        Assert.Contains(@"- D:\CMPBackend\OrderBackend:/app:rw", block);
-        Assert.Contains(@"- C:\Users\me\.nuget\packages:/root/.nuget/packages:ro", block);
+        Assert.Contains(@"- 'D:\CMPBackend\OrderBackend:/app:rw'", block);
+        Assert.Contains(@"- 'C:\Users\me\.nuget\packages:/root/.nuget/packages:ro'", block);
         Assert.Contains("ASPNETCORE_ENVIRONMENT=Development", block);
         Assert.Contains("\"dotnet\", \"/app/bin/Debug/net10.0/OrderBackend.dll\"", block);
         Assert.Contains("\"--additionalProbingPath\", \"/root/.nuget/packages\"", block);
@@ -61,22 +61,11 @@ public class FastDevComposeGeneratorTests
     }
 
     [Fact]
-    public void BuildUpAllArgs_有override時_fastdev檔接在原檔後且不帶service()
+    public void ServiceOverrideBlock_路徑含空白與井號_以單引號包住()
     {
-        var args = FastDevComposeGenerator.BuildUpAllArgs(
-            ["compose"], ["-f", "docker-compose.yml"], @"C:\appdata\fd.yml");
+        var block = FastDevComposeGenerator.ServiceOverrideBlock(
+            "orderbackend", SampleConfig(), @"D:\My Repo #1\OrderBackend", @"C:\Users\me\.nuget\packages");
 
-        Assert.Equal(
-            ["compose", "-f", "docker-compose.yml", "-f", @"C:\appdata\fd.yml", "up", "-d"],
-            args);
-    }
-
-    [Fact]
-    public void BuildUpAllArgs_無override時_不加額外f()
-    {
-        var args = FastDevComposeGenerator.BuildUpAllArgs(
-            ["compose"], ["-f", "docker-compose.yml"], null);
-
-        Assert.Equal(["compose", "-f", "docker-compose.yml", "up", "-d"], args);
+        Assert.Contains(@"- 'D:\My Repo #1\OrderBackend:/app:rw'", block);
     }
 }

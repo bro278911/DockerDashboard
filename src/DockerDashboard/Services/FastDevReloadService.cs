@@ -10,6 +10,8 @@ public class FastDevReloadService : IDisposable
 {
     private readonly Dictionary<string, FileSystemWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, CancellationTokenSource> _debounceCts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _running = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _pending = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
     private bool _disposed;
 
@@ -87,7 +89,7 @@ public class FastDevReloadService : IDisposable
         return false;
     }
 
-    private void TriggerDebounce(string solutionDir)
+    internal void TriggerDebounce(string solutionDir)
     {
         CancellationTokenSource newCts;
         lock (_lock)
@@ -104,8 +106,7 @@ public class FastDevReloadService : IDisposable
             try
             {
                 await Task.Delay(DebounceDelay, newCts.Token);
-                if (OnSolutionChanged != null)
-                    await OnSolutionChanged(solutionDir);
+                await RunSingleFlightAsync(solutionDir);
             }
             catch (OperationCanceledException) { }
             finally
@@ -119,6 +120,38 @@ public class FastDevReloadService : IDisposable
                 newCts.Dispose();
             }
         }, CancellationToken.None);
+    }
+
+    // 同目錄 callback 不重疊：執行中再觸發只記 pending，跑完補一次
+    private async Task RunSingleFlightAsync(string solutionDir)
+    {
+        lock (_lock)
+        {
+            if (!_running.Add(solutionDir))
+            {
+                _pending.Add(solutionDir);
+                return;
+            }
+        }
+
+        try
+        {
+            var again = true;
+            while (again)
+            {
+                if (OnSolutionChanged != null)
+                    await OnSolutionChanged(solutionDir);
+                lock (_lock) again = _pending.Remove(solutionDir);
+            }
+        }
+        finally
+        {
+            lock (_lock)
+            {
+                _running.Remove(solutionDir);
+                _pending.Remove(solutionDir);
+            }
+        }
     }
 
     public void Dispose()

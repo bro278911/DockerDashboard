@@ -31,9 +31,7 @@ public static class FastDevDetector
         if (!Directory.Exists(workingDirectory))
             return new FastDevDetectionResult([], defaultRuntimeImage, null);
 
-        var allCsproj = Directory
-            .EnumerateFiles(workingDirectory, "*.csproj", SearchOption.AllDirectories)
-            .Where(p => !IsInIgnoredDir(Path.GetRelativePath(workingDirectory, p)))
+        var allCsproj = EnumerateCsprojPruned(workingDirectory)
             .Select(p => ToPosixRelative(workingDirectory, p))
             .ToList();
 
@@ -90,13 +88,27 @@ public static class FastDevDetector
         return new FastDevProjectInfo(tfm, assembly);
     }
 
-    private static bool IsInIgnoredDir(string relativePath)
+    // 遞迴前剪枝，避免走進 bin/obj/.git/node_modules 產生大量無效 I/O
+    private static IEnumerable<string> EnumerateCsprojPruned(string root)
     {
-        var parts = relativePath.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
-            StringSplitOptions.RemoveEmptyEntries);
-        return parts.Any(p =>
-            p.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
-            p.Equals("obj", StringComparison.OrdinalIgnoreCase));
+        var stack = new Stack<string>();
+        stack.Push(root);
+        while (stack.Count > 0)
+        {
+            var dir = stack.Pop();
+            foreach (var file in Directory.EnumerateFiles(dir, "*.csproj"))
+                yield return file;
+            foreach (var sub in Directory.EnumerateDirectories(dir))
+            {
+                var name = Path.GetFileName(sub);
+                if (name.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("obj", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("node_modules", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                stack.Push(sub);
+            }
+        }
     }
 
     private static string ToPosixRelative(string root, string fullPath) =>

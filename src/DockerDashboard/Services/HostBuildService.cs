@@ -64,11 +64,13 @@ public class HostBuildService
 
         using var process = new Process { StartInfo = psi };
         var output = new StringBuilder();
+        // stdout/stderr 事件在不同執行緒觸發，StringBuilder 非執行緒安全
+        var outputLock = new object();
         process.OutputDataReceived += (_, e) =>
         {
             if (e.Data != null)
             {
-                output.AppendLine(e.Data);
+                lock (outputLock) output.AppendLine(e.Data);
                 onOutput(e.Data);
             }
         };
@@ -76,7 +78,7 @@ public class HostBuildService
         {
             if (e.Data != null)
             {
-                output.AppendLine(e.Data);
+                lock (outputLock) output.AppendLine(e.Data);
                 onOutput(e.Data);
             }
         };
@@ -100,8 +102,8 @@ public class HostBuildService
             catch
             {
             }
-            return (-1, output.ToString() + "\n[build 逾時，已終止]");
+            lock (outputLock) return (-1, output.ToString() + "\n[build 逾時，已終止]");
         }
-        return (process.ExitCode, output.ToString());
+        lock (outputLock) return (process.ExitCode, output.ToString());
     }
 }

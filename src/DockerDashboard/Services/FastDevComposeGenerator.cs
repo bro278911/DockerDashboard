@@ -24,8 +24,8 @@ public static class FastDevComposeGenerator
         sb.AppendLine($"  {serviceName}:");
         sb.AppendLine($"    image: {config.RuntimeImage}");
         sb.AppendLine("    volumes:");
-        sb.AppendLine($"      - {projectDirHostPath}:/app:rw");
-        sb.AppendLine($"      - {nugetHostPath}:/root/.nuget/packages:ro");
+        sb.AppendLine($"      - {YamlQuote($"{projectDirHostPath}:/app:rw")}");
+        sb.AppendLine($"      - {YamlQuote($"{nugetHostPath}:/root/.nuget/packages:ro")}");
         sb.AppendLine("    environment:");
         sb.AppendLine("      - ASPNETCORE_ENVIRONMENT=Development");
         sb.AppendLine($"    entrypoint: [\"dotnet\", \"{dll}\", \"--additionalProbingPath\", \"/root/.nuget/packages\"]");
@@ -42,20 +42,7 @@ public static class FastDevComposeGenerator
         return sb.ToString();
     }
 
-    // 整包 up：docker compose -f 原檔... -f fastdev up -d（不帶 service、不 --no-deps）
-    public static List<string> BuildUpAllArgs(
-        IEnumerable<string> composePrefixArgs, IEnumerable<string> composeFileArgs, string? extraOverrideFile)
-    {
-        var args = new List<string>();
-        args.AddRange(composePrefixArgs);
-        args.AddRange(composeFileArgs);
-        if (!string.IsNullOrEmpty(extraOverrideFile))
-        {
-            args.Add("-f");
-            args.Add(extraOverrideFile);
-        }
-        args.Add("up");
-        args.Add("-d");
-        return args;
-    }
+    // YAML 單引號：路徑含空白、# 或中文時 plain scalar 會被誤解析
+    private static string YamlQuote(string value) =>
+        $"'{value.Replace("'", "''")}'";
 }
