@@ -220,6 +220,9 @@ public class MainViewModelFastDevFailureTests
             CancellationToken ct,
             string? extraOverrideFile = null) =>
             Task.FromResult((ComposeUpNoDepsExitCode, string.Empty));
+        public Task<(int ExitCode, string Output)> RestartContainerAsync(
+            string containerNameOrId, Action<string> onOutput, CancellationToken ct) =>
+            Task.FromResult((0, string.Empty));
         public Task<(int ExitCode, string Output)> ComposeRebuildRestartWithLogAsync(
             string workingDirectory,
             Action<string> onOutput,

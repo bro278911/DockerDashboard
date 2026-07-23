@@ -31,6 +31,9 @@ public interface IDockerCliService
         string workingDirectory, string serviceName, Action<string> onOutput,
         CancellationToken ct, string? extraOverrideFile = null);
 
+    Task<(int ExitCode, string Output)> RestartContainerAsync(
+        string containerNameOrId, Action<string> onOutput, CancellationToken ct);
+
     Task<(int ExitCode, string Output)> ComposeDownWithLogAsync(
         string workingDirectory, Action<string> onOutput, CancellationToken ct = default);
 

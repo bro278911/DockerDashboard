@@ -50,6 +50,7 @@ public class ContainerMonitorServiceTests
         public ProcessStream StartComposeWatch(string workingDirectory, IEnumerable<string> serviceNames) => throw new NotSupportedException();
         public Task<(int ExitCode, string Output)> ComposeUpFastWithLogAsync(string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<(int ExitCode, string Output)> ComposeUpNoDepsAsync(string workingDirectory, string serviceName, Action<string> onOutput, CancellationToken ct, string? extraOverrideFile = null) => throw new NotSupportedException();
+        public Task<(int ExitCode, string Output)> RestartContainerAsync(string containerNameOrId, Action<string> onOutput, CancellationToken ct) => throw new NotSupportedException();
         public Task<(int ExitCode, string Output)> ComposeDownWithLogAsync(string workingDirectory, Action<string> onOutput, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<(int ExitCode, string Output)> ComposeRestartWithLogAsync(string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<(int ExitCode, string Output)> ComposeRebuildRestartWithLogAsync(string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default) => throw new NotSupportedException();

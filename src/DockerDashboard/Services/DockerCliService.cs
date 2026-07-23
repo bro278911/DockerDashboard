@@ -265,6 +265,10 @@ public class DockerCliService : IDockerCliService
         return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
     }
 
+    public Task<(int ExitCode, string Output)> RestartContainerAsync(
+        string containerNameOrId, Action<string> onOutput, CancellationToken ct) =>
+        RunCommandWithLogAsync("docker", ["restart", containerNameOrId], null, onOutput, ct);
+
     public async Task<(int ExitCode, string Output)> ComposeDownWithLogAsync(
         string workingDirectory, Action<string> onOutput, CancellationToken ct = default)
     {
