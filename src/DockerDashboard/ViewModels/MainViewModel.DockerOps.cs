@@ -841,91 +841,163 @@ public partial class MainViewModel
     private async Task ToggleFastDevServiceAsync(DockerService? service)
     {
         if (service == null) return;
+        if (service.IsFastDev) { await DisableFastDevServicesAsync([service]); return; }
+        await EnableFastDevServicesAsync(service.WorkingDirectory, [service]);
+    }
 
-        if (service.IsFastDev)
+    [RelayCommand]
+    private async Task ToggleProjectFastDevAsync(DockerProject? project)
+    {
+        if (project == null) return;
+        var services = project.ComposeFiles.SelectMany(c => c.Services).ToList();
+        if (services.Any(s => s.IsFastDev))
         {
-            await DisableFastDevAsync(service);
+            await DisableFastDevServicesAsync(services.Where(s => s.IsFastDev).ToList());
+            return;
+        }
+        foreach (var group in services.GroupBy(s => s.WorkingDirectory, StringComparer.OrdinalIgnoreCase))
+            await EnableFastDevServicesAsync(group.Key, group.ToList());
+    }
+
+    private async Task EnableFastDevServicesAsync(string workingDirectory, IReadOnlyList<DockerService> services)
+    {
+        if (!await IsDotnetSdkAvailableAsync())
+        {
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ 找不到 host 端 dotnet SDK，無法啟用 Fast Dev");
             return;
         }
 
         var settings = await _settingsService.LoadAsync();
-        var config = ResolveFastDevConfig(service, settings);
-        if (config == null)
+        var configs = new List<(DockerService Service, FastDevConfig Config)>();
+        foreach (var service in services)
         {
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {service.Name} 找不到 .csproj，無法啟用 Fast Dev");
+            var config = ResolveFastDevConfig(service, settings);
+            if (config == null)
+            {
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {service.Name} 找不到 .csproj，略過");
+                continue;
+            }
+            configs.Add((service, config));
+        }
+        if (configs.Count == 0) return;
+
+        // Fast Dev 與 Auto-Watch 互斥
+        foreach (var (service, _) in configs)
+            if (service.IsWatching)
+            {
+                service.IsWatching = false;
+                _watchService.RemoveWatch(service.WorkingDirectory, service.Name);
+            }
+
+        StatusMessage = "正在 host build（首次較久）...";
+        AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔨 host build {workingDirectory}");
+        var detection = FastDevDetector.Detect(workingDirectory, configs[0].Service.Name, settings.DefaultRuntimeImage);
+        var fallbackProjects = configs
+            .Select(c => Path.Combine(workingDirectory, c.Config.CsprojRelativePath.Replace('/', Path.DirectorySeparatorChar)))
+            .ToList();
+        var (buildExit, _) = await _hostBuild.BuildAsync(detection.SolutionPath, fallbackProjects, AppendLog, CancellationToken.None);
+        if (buildExit != 0)
+        {
+            StatusMessage = "⚠ host build 失敗，Fast Dev 未啟用";
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ host build 失敗 (exit {buildExit})");
             return;
         }
 
-        // Fast Dev 與 Auto-Watch/compose-watch 互斥
-        var wasWatching = service.IsWatching;
-        if (wasWatching)
+        foreach (var (service, config) in configs)
         {
-            service.IsWatching = false;
-            _watchService.RemoveWatch(service.WorkingDirectory, service.Name);
-            UpdateComposeWatchForDirectory(service.WorkingDirectory);
-        }
-
-        var (srcHost, nugetHost) = ResolveFastDevHostPaths(config);
-        var yaml = FastDevComposeGenerator.GenerateOverrideYaml(service.Name, config, srcHost, nugetHost);
-        var overridePath = FastDevOverrideStore.Write(service.WatchKey, yaml);
-
-        service.IsFastDev = true;
-        StatusMessage = $"正在啟用 {service.Name} Fast Dev...";
-        AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚡ 啟用 Fast Dev：{service.Name}（dotnet watch 熱重載）");
-
-        var (exitCode, _) = await _dockerCli.ComposeUpNoDepsAsync(
-            service.WorkingDirectory, service.Name, AppendLog, CancellationToken.None, overridePath);
-
-        if (exitCode != 0)
-        {
-            service.IsFastDev = false;
-            FastDevOverrideStore.Delete(service.WatchKey);
-            if (wasWatching)
+            var (appDirHost, nugetHost) = ResolveFastDevHostPaths(config);
+            var yaml = FastDevComposeGenerator.GenerateOverrideYaml(service.Name, config, appDirHost, nugetHost);
+            var overridePath = FastDevOverrideStore.Write(service.WatchKey, yaml);
+            var (upExit, _) = await _dockerCli.ComposeUpNoDepsAsync(
+                service.WorkingDirectory, service.Name, AppendLog, CancellationToken.None, overridePath);
+            if (upExit != 0)
             {
-                service.IsWatching = true;
-                if (DockerCliService.IsWslUncPath(service.WorkingDirectory))
-                    UpdateComposeWatchForDirectory(service.WorkingDirectory);
-                else
-                    _watchService.AddWatch(service.WorkingDirectory, service.Name);
+                FastDevOverrideStore.Delete(service.WatchKey);
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {service.Name} 啟用失敗 (exit {upExit})");
+                continue;
             }
-            StatusMessage = $"⚠ {service.Name} Fast Dev 啟用失敗";
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ Fast Dev 啟用失敗 (exit {exitCode})");
-        }
-        else
-        {
+            service.IsFastDev = true;
             PersistFastDev(settings, service.WatchKey, config, enabled: true);
-            await _settingsService.SaveAsync(settings);
-            StatusMessage = $"✅ {service.Name} 已進入 Fast Dev";
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ Fast Dev 就緒：改 .cs 即熱重載（首次 restore 稍慢）");
         }
 
+        await _settingsService.SaveAsync(settings);
+        _fastDevReload.Watch(workingDirectory);
+        StatusMessage = "✅ Fast Dev 就緒（改 .cs 約 5 秒生效）";
         await _monitor.ForceRefreshAsync();
     }
 
-    private async Task DisableFastDevAsync(DockerService service)
+    private async Task DisableFastDevServicesAsync(IReadOnlyList<DockerService> services)
     {
-        StatusMessage = $"正在關閉 {service.Name} Fast Dev...";
-        AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ 關閉 Fast Dev：{service.Name}（換回原 image）");
-
-        var (exitCode, _) = await _dockerCli.ComposeUpNoDepsAsync(
-            service.WorkingDirectory, service.Name, AppendLog, CancellationToken.None);
-
-        if (exitCode == 0)
+        var settings = await _settingsService.LoadAsync();
+        foreach (var service in services)
         {
-            service.IsFastDev = false;
-            FastDevOverrideStore.Delete(service.WatchKey);
-
-            var settings = await _settingsService.LoadAsync();
-            PersistFastDev(settings, service.WatchKey, null, enabled: false);
-            await _settingsService.SaveAsync(settings);
-            StatusMessage = $"✅ {service.Name} 已離開 Fast Dev";
+            StatusMessage = $"正在關閉 {service.Name} Fast Dev...";
+            var (exitCode, _) = await _dockerCli.ComposeUpNoDepsAsync(
+                service.WorkingDirectory, service.Name, AppendLog, CancellationToken.None);
+            if (exitCode == 0)
+            {
+                service.IsFastDev = false;
+                FastDevOverrideStore.Delete(service.WatchKey);
+                PersistFastDev(settings, service.WatchKey, null, enabled: false);
+            }
+            else
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {service.Name} 還原可能失敗 (exit {exitCode})");
         }
-        else
+        await _settingsService.SaveAsync(settings);
+
+        var allServices = Projects.SelectMany(p => p.ComposeFiles).SelectMany(c => c.Services).ToList();
+        foreach (var dir in services.Select(s => s.WorkingDirectory).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            StatusMessage = $"⚠ {service.Name} 還原可能失敗";
+            var stillOn = allServices.Any(s => s.IsFastDev &&
+                string.Equals(s.WorkingDirectory, dir, StringComparison.OrdinalIgnoreCase));
+            if (!stillOn) _fastDevReload.Unwatch(dir);
         }
 
+        StatusMessage = "✅ 已離開 Fast Dev";
         await _monitor.ForceRefreshAsync();
+    }
+
+    private async Task OnFastDevSolutionChangedAsync(string workingDirectory)
+    {
+        var settings = await _settingsService.LoadAsync();
+        var fastDevServices = Projects.SelectMany(p => p.ComposeFiles).SelectMany(c => c.Services)
+            .Where(s => s.IsFastDev &&
+                        string.Equals(s.WorkingDirectory, workingDirectory, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (fastDevServices.Count == 0) return;
+
+        var before = new Dictionary<string, (string DllPath, long BeforeTicks)>();
+        foreach (var service in fastDevServices)
+        {
+            var config = settings.FastDevConfigs.FirstOrDefault(c => c.ServiceKey == service.WatchKey);
+            if (config == null) continue;
+            var dll = HostDllPath(config);
+            before[service.WatchKey] = (dll, HostBuildService.DllMtimeTicks(dll));
+        }
+        if (before.Count == 0) return;
+
+        AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔨 偵測變動，host 增量 build...");
+        var detection = FastDevDetector.Detect(workingDirectory, fastDevServices[0].Name, settings.DefaultRuntimeImage);
+        var fallback = before.Keys
+            .Select(k => settings.FastDevConfigs.First(c => c.ServiceKey == k))
+            .Select(c => Path.Combine(workingDirectory, c.CsprojRelativePath.Replace('/', Path.DirectorySeparatorChar)))
+            .ToList();
+        var (buildExit, _) = await _hostBuild.BuildAsync(detection.SolutionPath, fallback, AppendLog, CancellationToken.None);
+        if (buildExit != 0)
+        {
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ 增量 build 失敗，容器維持舊 dll (exit {buildExit})");
+            return;
+        }
+
+        var changedKeys = HostBuildService.ChangedServiceKeys(before, HostBuildService.DllMtimeTicks);
+        foreach (var key in changedKeys)
+        {
+            var service = fastDevServices.First(s => s.WatchKey == key);
+            var container = string.IsNullOrEmpty(service.ContainerName) ? service.Name : service.ContainerName;
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ♻ 重啟 {service.Name}");
+            await _dockerCli.RestartContainerAsync(container, AppendLog, CancellationToken.None);
+        }
+        if (changedKeys.Count > 0) await _monitor.ForceRefreshAsync();
     }
 
     private FastDevConfig? ResolveFastDevConfig(DockerService service, AppSettings settings)
@@ -942,11 +1014,14 @@ public partial class MainViewModel
         };
         if (chosen == null) return null;
 
+        var info = FastDevDetector.ReadProjectInfo(service.WorkingDirectory, chosen, "net10.0");
         return new FastDevConfig
         {
             ServiceKey = service.WatchKey,
             CsprojRelativePath = chosen,
             RuntimeImage = result.RuntimeImage,
+            Tfm = info.Tfm,
+            AssemblyName = info.AssemblyName,
             SrcRoot = service.WorkingDirectory
         };
     }
@@ -961,15 +1036,49 @@ public partial class MainViewModel
             : null;
     }
 
-    private (string SrcHost, string NugetHost) ResolveFastDevHostPaths(FastDevConfig config)
+    private static string HostDllPath(FastDevConfig config)
     {
-        var nuget = System.IO.Path.Combine(
+        var projectDir = FastDevComposeGenerator.ProjectDirRelative(config);
+        var baseDir = projectDir.Length == 0
+            ? config.SrcRoot
+            : Path.Combine(config.SrcRoot, projectDir.Replace('/', Path.DirectorySeparatorChar));
+        return Path.Combine(baseDir, "bin", "Debug", config.Tfm, config.AssemblyName + ".dll");
+    }
+
+    private (string AppDirHost, string NugetHost) ResolveFastDevHostPaths(FastDevConfig config)
+    {
+        var projectDir = FastDevComposeGenerator.ProjectDirRelative(config);
+        var appHost = projectDir.Length == 0
+            ? config.SrcRoot
+            : Path.Combine(config.SrcRoot, projectDir.Replace('/', Path.DirectorySeparatorChar));
+        var nuget = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
 
         if (DockerCliService.IsWslUncPath(config.SrcRoot))
-            return (DockerCliService.ConvertToWslPath(config.SrcRoot), DockerCliService.ConvertToWslPath(nuget));
+            return (DockerCliService.ConvertToWslPath(appHost), DockerCliService.ConvertToWslPath(nuget));
 
-        return (config.SrcRoot, nuget);
+        return (appHost, nuget);
+    }
+
+    private async Task<bool> IsDotnetSdkAvailableAsync()
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = "--version",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+            using var p = System.Diagnostics.Process.Start(psi);
+            if (p == null) return false;
+            await p.WaitForExitAsync();
+            return p.ExitCode == 0;
+        }
+        catch { return false; }
     }
 
     internal static bool CanEnableWatch(DockerService service) => !service.IsFastDev;

@@ -26,6 +26,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ContainerMonitorService _monitor;
     private readonly WatchRebuildService _watchService;
     private readonly ComposeWatchService _composeWatch;
+    private readonly HostBuildService _hostBuild;
+    private readonly FastDevReloadService _fastDevReload;
     private readonly UpdateService _updateService;
     private Forms.NotifyIcon? _notifyIcon;
     private readonly ConcurrentQueue<string> _pendingLogQueue = new();
@@ -103,6 +105,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ContainerMonitorService monitor,
         WatchRebuildService watchService,
         ComposeWatchService composeWatch,
+        HostBuildService hostBuild,
+        FastDevReloadService fastDevReload,
         UpdateService updateService)
     {
         _dockerCli = dockerCli;
@@ -112,6 +116,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _monitor = monitor;
         _watchService = watchService;
         _composeWatch = composeWatch;
+        _hostBuild = hostBuild;
+        _fastDevReload = fastDevReload;
         _updateService = updateService;
 
         _monitor.ContainersUpdated += OnContainersUpdated;
@@ -119,6 +125,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _watchService.SetRebuildCallback(OnAutoRebuildTriggeredAsync);
         _composeWatch.OnOutput = AppendLog;
         _composeWatch.OnProcessExited = OnComposeWatchExited;
+        _fastDevReload.OnSolutionChanged = OnFastDevSolutionChangedAsync;
 
         LogView = CollectionViewSource.GetDefaultView(LogLines);
         LogView.Filter = LogFilterPredicate;
@@ -254,6 +261,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         foreach (var dir in wslDirs)
             UpdateComposeWatchForDirectory(dir);
+
+        foreach (var dir in Projects.SelectMany(p => p.ComposeFiles).SelectMany(c => c.Services)
+                     .Where(s => s.IsFastDev)
+                     .Select(s => s.WorkingDirectory)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+            _fastDevReload.Watch(dir);
     }
 
     internal static bool ShouldRestoreWatch(AppSettings settings, string serviceKey) =>
@@ -531,6 +544,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _monitor.Dispose();
         _watchService.Dispose();
         _composeWatch.Dispose();
+        _fastDevReload.Dispose();
         GC.SuppressFinalize(this);
     }
 }
