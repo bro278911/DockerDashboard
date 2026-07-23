@@ -66,6 +66,38 @@
                 <Separator Style="{StaticResource MaterialDesignLightSeparator}" Margin="8,0" />
 
                 <Button Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{Binding ToggleFastDevAutoReloadCommand}"
+                        ToolTip="自動熱重載開關：Fast Dev 中改 .cs 是否自動 build+重啟（關掉可攢一批改動再手動重載）">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon VerticalAlignment="Center">
+                            <materialDesign:PackIcon.Style>
+                                <Style TargetType="materialDesign:PackIcon">
+                                    <Setter Property="Kind" Value="Fire" />
+                                    <Setter Property="Foreground" Value="Gray" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding FastDevAutoReloadEnabled}" Value="True">
+                                            <Setter Property="Foreground" Value="#FF5722" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </materialDesign:PackIcon.Style>
+                        </materialDesign:PackIcon>
+                        <TextBlock Text="自動熱重載" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <Button Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{Binding ManualReloadCommand}"
+                        ToolTip="手動重載：立刻 host build 並重啟有變動的 Fast Dev 服務（自動關閉時用）">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon Kind="Reload" VerticalAlignment="Center" />
+                        <TextBlock Text="手動重載" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <Separator Style="{StaticResource MaterialDesignLightSeparator}" Margin="8,0" />
+
+                <Button Style="{StaticResource MaterialDesignFlatButton}"
                         Command="{Binding RescanProjectsCommand}"
                         ToolTip="重新掃描所有資料夾">
                     <StackPanel Orientation="Horizontal">

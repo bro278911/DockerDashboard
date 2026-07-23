@@ -643,6 +643,34 @@ public partial class MainViewModel
             await EnableFastDevServicesAsync(group.Key, group.ToList());
     }
 
+    [RelayCommand]
+    private async Task ToggleFastDevAutoReloadAsync()
+    {
+        FastDevAutoReloadEnabled = !FastDevAutoReloadEnabled;
+        _fastDevReload.IsEnabled = FastDevAutoReloadEnabled;
+        var settings = await _settingsService.LoadAsync();
+        settings.FastDevAutoReloadEnabled = FastDevAutoReloadEnabled;
+        await _settingsService.SaveAsync(settings);
+        AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔥 自動熱重載：{(FastDevAutoReloadEnabled ? "開" : "關")}");
+    }
+
+    [RelayCommand]
+    private async Task ManualReloadAsync()
+    {
+        var dirs = Projects.SelectMany(p => p.ComposeFiles).SelectMany(c => c.Services)
+            .Where(s => s.IsFastDev)
+            .Select(s => s.WorkingDirectory)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (dirs.Count == 0)
+        {
+            StatusMessage = "⚠ 沒有 Fast Dev 服務可重載";
+            return;
+        }
+        foreach (var dir in dirs)
+            await OnFastDevSolutionChangedAsync(dir);
+    }
+
     private async Task EnableFastDevServicesAsync(string workingDirectory, IReadOnlyList<DockerService> services)
     {
         if (!await IsDotnetSdkAvailableAsync())
