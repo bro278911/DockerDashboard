@@ -43,6 +43,7 @@ public class FastDevComposeGeneratorTests
         Assert.Contains(@"- 'D:\CMPBackend\OrderBackend:/app:rw'", block);
         Assert.Contains(@"- 'C:\Users\me\.nuget\packages:/.nuget/packages:ro'", block);
         Assert.Contains("ASPNETCORE_ENVIRONMENT=Development", block);
+        Assert.Contains("ASPNETCORE_STATICWEBASSETS=/app/__nostaticwebassets__.json", block);
         Assert.Contains("\"dotnet\", \"/app/bin/Debug/net10.0/OrderBackend.dll\"", block);
         Assert.Contains("\"--additionalProbingPath\", \"/.nuget/packages\"", block);
         Assert.DoesNotContain("watch", block);

@@ -36,6 +36,9 @@ public static class FastDevComposeGenerator
         sb.AppendLine("      - ASPNETCORE_ENVIRONMENT=Development");
         // 強制聽 8080：nginx 反向代理寫死 proxy_pass ...:8080，容器沒聽 8080 就轉發失敗（nginx 404/502）
         sb.AppendLine("      - ASPNETCORE_URLS=http://+:8080");
+        // 指向不存在的 manifest：staticwebassets.runtime.json 內是 host Windows 路徑，容器載入會 crash（The path must be absolute）；
+        // 設此值讓 .NET 找不到就跳過，app 照跑、wwwroot 仍由 UseStaticFiles 提供
+        sb.AppendLine("      - ASPNETCORE_STATICWEBASSETS=/app/__nostaticwebassets__.json");
         sb.AppendLine($"    entrypoint: [\"dotnet\", \"{dll}\", \"--additionalProbingPath\", \"/.nuget/packages\"]");
         return sb.ToString();
     }
