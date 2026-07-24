@@ -264,10 +264,10 @@ public class DockerCliService : IDockerCliService
         string workingDirectory, Action<string> onOutput,
         CancellationToken ct, string? extraOverrideFile = null)
     {
-        // 整包 up：-f 原檔（含 build.yml，nginx 才會 build 路由設定）... -f fastdev up -d
-        // .NET 服務的 fastdev override 為 build.target: base，只建 runtime 階段不做完整 image build
+        // 整包 up --build：--build 才會建自訂 nginx（否則吃到本機公開 nginx image，路由設定沒進去 → 404）
+        // .NET 服務的 fastdev override 為 build.target: base，--build 只建 runtime 階段，仍很快
         var args = BuildComposeArgs(
-            workingDirectory, ["up", "-d"], NormalizeComposeOverridePath(extraOverrideFile));
+            workingDirectory, ["up", "-d", "--build"], NormalizeComposeOverridePath(extraOverrideFile));
         return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
     }
 
