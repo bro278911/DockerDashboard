@@ -264,18 +264,10 @@ public class DockerCliService : IDockerCliService
         string workingDirectory, Action<string> onOutput,
         CancellationToken ct, string? extraOverrideFile = null)
     {
-        // 整包 up：-f 原檔（排除 build.yml）... -f fastdev up -d（不帶 service、不 --no-deps）
-        // 排除 build.yml 避免 compose 去 build 各服務 Dockerfile（Fast Dev 只跑 aspnet + 掛 dll，不重建 image）
-        var args = new List<string>(ComposeArgs);
-        args.AddRange(ComposeFileHelper.GetComposeFileArgsNoBuild(workingDirectory));
-        var normalizedOverrideFile = NormalizeComposeOverridePath(extraOverrideFile);
-        if (!string.IsNullOrEmpty(normalizedOverrideFile))
-        {
-            args.Add("-f");
-            args.Add(normalizedOverrideFile);
-        }
-        args.Add("up");
-        args.Add("-d");
+        // 整包 up：-f 原檔（含 build.yml，nginx 才會 build 路由設定）... -f fastdev up -d
+        // .NET 服務的 fastdev override 為 build.target: base，只建 runtime 階段不做完整 image build
+        var args = BuildComposeArgs(
+            workingDirectory, ["up", "-d"], NormalizeComposeOverridePath(extraOverrideFile));
         return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
     }
 

@@ -689,27 +689,53 @@ public partial class MainViewModel
 
     private async Task EnableFastDevServicesAsync(string workingDirectory, IReadOnlyList<DockerService> services)
     {
+        // 按下瞬間就給回饋（進度條 + 文字 + log），否則只有按鈕變灰、像沒反應
+        IsOperating = true;
+        StatusMessage = "⚡ 正在啟用 Fast Dev...";
+        AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚡ 啟用 Fast Dev（{services.Count} 個服務）...");
+
         if (!await IsDotnetSdkAvailableAsync())
         {
+            IsOperating = false;
+            StatusMessage = "⚠ 找不到 host 端 dotnet SDK";
             AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ 找不到 host 端 dotnet SDK，無法啟用 Fast Dev");
             return;
         }
 
         var settings = await _settingsService.LoadAsync();
-        var enabled = new List<DockerService>();
-        foreach (var service in services)
+
+        // 偵測含目錄掃描與讀檔，移出 UI 執行緒，否則按鈕按下會卡住數十秒像當機
+        StatusMessage = "正在偵測專案（讀取 csproj）...";
+        var resolved = await Task.Run(() =>
         {
-            var config = ResolveFastDevConfig(service, settings);
-            if (config == null)
+            var list = new List<(DockerService Service, FastDevConfig Config)>();
+            foreach (var service in services)
             {
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {service.Name} 找不到 .csproj，略過");
-                continue;
+                var config = ResolveFastDevConfig(service, settings);
+                if (config == null)
+                {
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ℹ {service.Name} 非 .NET 專案，略過 Fast Dev（仍會照常啟動）");
+                    continue;
+                }
+                list.Add((service, config));
             }
+            return list;
+        });
+
+        if (resolved.Count == 0)
+        {
+            IsOperating = false;
+            StatusMessage = "⚠ 此專案沒有可啟用 Fast Dev 的 .NET 服務";
+            return;
+        }
+
+        var enabled = new List<DockerService>();
+        foreach (var (service, config) in resolved)
+        {
             service.IsFastDev = true;
             PersistFastDev(settings, service.WatchKey, config, enabled: true);
             enabled.Add(service);
         }
-        if (enabled.Count == 0) return;
 
         await _settingsService.SaveAsync(settings);
         if (await ApplyFastDevForDirectoryAsync(workingDirectory, settings)) return;
@@ -891,30 +917,29 @@ public partial class MainViewModel
         var existing = settings.FastDevConfigs.FirstOrDefault(c => c.ServiceKey == service.WatchKey);
         if (existing != null) return existing;
 
-        string? chosen;
+        string chosen;
         string runtimeImage;
 
-        // 優先照 compose build.dockerfile 確定專案（對齊 VS，零猜測）
-        var fromDockerfile = FastDevDetector.FromDockerfile(
-            service.WorkingDirectory, service.DockerfilePath, settings.DefaultRuntimeImage);
-        if (fromDockerfile != null)
+        if (!string.IsNullOrEmpty(service.DockerfilePath))
         {
+            // 有 build.dockerfile：照它確定專案（對齊 VS）。同目錄無 csproj = 非 .NET 服務（如 nginx）→ 跳過，不亂配
+            var fromDockerfile = FastDevDetector.FromDockerfile(
+                service.WorkingDirectory, service.DockerfilePath, settings.DefaultRuntimeImage);
+            if (fromDockerfile == null)
+                return null;
             chosen = fromDockerfile.CsprojRelativePath;
             runtimeImage = fromDockerfile.RuntimeImage;
         }
         else
         {
+            // 無 Dockerfile 資訊：只認資料夾名與服務名「完全相符」的 csproj，找不到就跳過（絕不亂挑別的專案）
             var result = FastDevDetector.Detect(service.WorkingDirectory, service.Name, settings.DefaultRuntimeImage);
-            chosen = PickBestCsproj(service.Name, result.CsprojCandidates);
+            var exact = result.CsprojCandidates.FirstOrDefault(c =>
+                c.Split('/')[0].Equals(service.Name, StringComparison.OrdinalIgnoreCase));
+            if (exact == null)
+                return null;
+            chosen = exact;
             runtimeImage = result.RuntimeImage;
-            if (chosen != null && result.CsprojCandidates.Count > 1)
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚙ {service.Name} 無 Dockerfile 資訊，自動選用 {chosen}");
-        }
-
-        if (chosen == null)
-        {
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {service.Name} 找不到對應 .csproj");
-            return null;
         }
 
         var info = FastDevDetector.ReadProjectInfo(service.WorkingDirectory, chosen, "net10.0");
@@ -927,20 +952,6 @@ public partial class MainViewModel
             AssemblyName = info.AssemblyName,
             SrcRoot = service.WorkingDirectory
         };
-    }
-
-    // 多個 .csproj 不彈窗打斷：資料夾名與服務名完全相符優先，其次含服務名，再不然取第一個
-    private static string? PickBestCsproj(string serviceName, IReadOnlyList<string> candidates)
-    {
-        if (candidates.Count <= 1) return candidates.Count == 1 ? candidates[0] : null;
-
-        var exact = candidates.FirstOrDefault(c =>
-            c.Split('/')[0].Equals(serviceName, StringComparison.OrdinalIgnoreCase));
-        if (exact != null) return exact;
-
-        var contains = candidates.FirstOrDefault(c =>
-            c.Split('/')[0].Contains(serviceName, StringComparison.OrdinalIgnoreCase));
-        return contains ?? candidates[0];
     }
 
     private static string HostDllPath(FastDevConfig config)

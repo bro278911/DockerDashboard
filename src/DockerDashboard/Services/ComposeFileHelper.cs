@@ -37,30 +37,6 @@ internal static class ComposeFileHelper
         return [.. cachedArgs];
     }
 
-    // Fast Dev 專用：排除 docker-compose.build.yml。帶 build.yml 時 compose 會去 build 各服務 Dockerfile
-    // （首次 aspnet image 未拉時尤其嚴重，等於重建整包 image），完全違背 Fast Dev「不重建 image」的目的
-    public static List<string> GetComposeFileArgsNoBuild(string directory)
-    {
-        if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
-            return [];
-
-        var args = new List<string>();
-        var mainFile = System.Array.Find(MainFiles, f => File.Exists(Path.Combine(directory, f)));
-        if (mainFile == null) return [];
-
-        args.Add("-f");
-        args.Add(mainFile);
-
-        var overrideFile = System.Array.Find(OverrideFiles, f => File.Exists(Path.Combine(directory, f)));
-        if (overrideFile != null)
-        {
-            args.Add("-f");
-            args.Add(overrideFile);
-        }
-
-        return args;
-    }
-
     private static string[] BuildArgs(string directory)
     {
         var args = new List<string>();
