@@ -264,9 +264,18 @@ public class DockerCliService : IDockerCliService
         string workingDirectory, Action<string> onOutput,
         CancellationToken ct, string? extraOverrideFile = null)
     {
-        // 整包 up：-f 原檔... -f fastdev up -d（不帶 service、不 --no-deps）
-        var args = BuildComposeArgs(
-            workingDirectory, ["up", "-d"], NormalizeComposeOverridePath(extraOverrideFile));
+        // 整包 up：-f 原檔（排除 build.yml）... -f fastdev up -d（不帶 service、不 --no-deps）
+        // 排除 build.yml 避免 compose 去 build 各服務 Dockerfile（Fast Dev 只跑 aspnet + 掛 dll，不重建 image）
+        var args = new List<string>(ComposeArgs);
+        args.AddRange(ComposeFileHelper.GetComposeFileArgsNoBuild(workingDirectory));
+        var normalizedOverrideFile = NormalizeComposeOverridePath(extraOverrideFile);
+        if (!string.IsNullOrEmpty(normalizedOverrideFile))
+        {
+            args.Add("-f");
+            args.Add(normalizedOverrideFile);
+        }
+        args.Add("up");
+        args.Add("-d");
         return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
     }
 
