@@ -48,6 +48,21 @@ public static class FastDevDetector
         return new FastDevDetectionResult(candidates, runtimeImage, solution);
     }
 
+    // 掃一次 csproj（POSIX 相對路徑），供啟用時所有服務共用，避免每個服務各掃一次全樹（配 AV 逐檔掃會變分鐘級）
+    public static List<string> EnumerateCsprojRelative(string workingDirectory)
+    {
+        if (!Directory.Exists(workingDirectory)) return [];
+        return EnumerateCsprojPruned(workingDirectory)
+            .Select(p => ToPosixRelative(workingDirectory, p))
+            .ToList();
+    }
+
+    // 只掃頂層找 .sln，不走全樹
+    public static string? FindSolution(string workingDirectory) =>
+        Directory.Exists(workingDirectory)
+            ? Directory.EnumerateFiles(workingDirectory, "*.sln", SearchOption.TopDirectoryOnly).FirstOrDefault()
+            : null;
+
     // 對齊 VS：由 compose build.dockerfile 確定專案，取該 Dockerfile 同目錄的 csproj 與 aspnet runtime
     public static FastDevDockerfileInfo? FromDockerfile(
         string workingDirectory, string dockerfileAbsPath, string defaultRuntimeImage)

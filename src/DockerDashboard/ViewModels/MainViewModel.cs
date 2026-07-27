@@ -31,6 +31,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ConcurrentQueue<string> _pendingLogQueue = new();
     private int _isLogFlushScheduled;
     private int _batchStartupParallelism = 3;
+    private bool _dotnetSdkChecked;
+    private bool _dotnetSdkAvailable;
     private CancellationTokenSource? _operationCts;
 
     public ObservableCollection<DockerProject> Projects { get; } = [];
@@ -202,6 +204,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         // 背景靜默檢查更新，不阻塞啟動
         if (settings.AutoCheckUpdate)
             _ = CheckUpdateAsync();
+
+        // 背景暖機 dotnet SDK 檢查：按下全部啟動(Fast Dev)時就不必等 dotnet 冷啟動
+        _ = IsDotnetSdkAvailableAsync();
     }
 
     private async Task<bool> TryConnectDockerAsync(DockerMode mode)

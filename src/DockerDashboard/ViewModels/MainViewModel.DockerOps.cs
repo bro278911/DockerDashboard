@@ -702,10 +702,14 @@ public partial class MainViewModel
         StatusMessage = "正在偵測專案（讀取 csproj）...";
         var resolved = await Task.Run(() =>
         {
+            // 只掃一次 csproj 共用（僅在有服務缺 build.dockerfile 時才需要），避免每個服務各掃全樹
+            var scannedCsproj = services.Any(s => string.IsNullOrEmpty(s.DockerfilePath))
+                ? FastDevDetector.EnumerateCsprojRelative(workingDirectory)
+                : null;
             var list = new List<(DockerService Service, FastDevConfig Config)>();
             foreach (var service in services)
             {
-                var config = ResolveFastDevConfig(service, settings);
+                var config = ResolveFastDevConfig(service, settings, scannedCsproj);
                 if (config == null)
                 {
                     AppendLog($"[{DateTime.Now:HH:mm:ss}] ℹ {service.Name} 非 .NET 專案，略過 Fast Dev（仍會照常啟動）");
@@ -810,11 +814,11 @@ public partial class MainViewModel
 
             StatusMessage = "正在 host build（首次較久，可取消）...";
             AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔨 host build {workingDirectory}");
-            var detection = FastDevDetector.Detect(workingDirectory, items[0].Service.Name, settings.DefaultRuntimeImage);
+            var solutionPath = FastDevDetector.FindSolution(workingDirectory);
             var fallbackProjects = items
                 .Select(i => Path.Combine(workingDirectory, i.Config.CsprojRelativePath.Replace('/', Path.DirectorySeparatorChar)))
                 .ToList();
-            var (buildExit, _) = await _hostBuild.BuildAsync(detection.SolutionPath, fallbackProjects, AppendLog, ct);
+            var (buildExit, _) = await _hostBuild.BuildAsync(solutionPath, fallbackProjects, AppendLog, ct);
             if (ct.IsCancellationRequested) return false;
             if (buildExit != 0)
             {
@@ -880,12 +884,12 @@ public partial class MainViewModel
         if (before.Count == 0) return;
 
         AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔨 偵測變動，host 增量 build...");
-        var detection = FastDevDetector.Detect(workingDirectory, fastDevServices[0].Name, settings.DefaultRuntimeImage);
+        var solutionPath = FastDevDetector.FindSolution(workingDirectory);
         var fallback = before.Keys
             .Select(k => settings.FastDevConfigs.First(c => c.ServiceKey == k))
             .Select(c => Path.Combine(workingDirectory, c.CsprojRelativePath.Replace('/', Path.DirectorySeparatorChar)))
             .ToList();
-        var (buildExit, _) = await _hostBuild.BuildAsync(detection.SolutionPath, fallback, AppendLog, CancellationToken.None);
+        var (buildExit, _) = await _hostBuild.BuildAsync(solutionPath, fallback, AppendLog, CancellationToken.None);
         if (buildExit != 0)
         {
             AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ 增量 build 失敗，容器維持舊 dll (exit {buildExit})");
@@ -906,7 +910,7 @@ public partial class MainViewModel
         if (changedKeys.Count > 0) await _monitor.ForceRefreshAsync();
     }
 
-    private FastDevConfig? ResolveFastDevConfig(DockerService service, AppSettings settings)
+    private FastDevConfig? ResolveFastDevConfig(DockerService service, AppSettings settings, IReadOnlyList<string>? scannedCsproj)
     {
         var existing = settings.FastDevConfigs.FirstOrDefault(c => c.ServiceKey == service.WatchKey);
         if (existing != null) return existing;
@@ -926,14 +930,13 @@ public partial class MainViewModel
         }
         else
         {
-            // 無 Dockerfile 資訊：只認資料夾名與服務名「完全相符」的 csproj，找不到就跳過（絕不亂挑別的專案）
-            var result = FastDevDetector.Detect(service.WorkingDirectory, service.Name, settings.DefaultRuntimeImage);
-            var exact = result.CsprojCandidates.FirstOrDefault(c =>
+            // 無 Dockerfile 資訊：用預掃的 csproj 清單做「資料夾名 = 服務名」完全比對，找不到就跳過（絕不亂挑別的專案）
+            var exact = scannedCsproj?.FirstOrDefault(c =>
                 c.Split('/')[0].Equals(service.Name, StringComparison.OrdinalIgnoreCase));
             if (exact == null)
                 return null;
             chosen = exact;
-            runtimeImage = result.RuntimeImage;
+            runtimeImage = settings.DefaultRuntimeImage;
         }
 
         var info = FastDevDetector.ReadProjectInfo(service.WorkingDirectory, chosen, "net10.0");
@@ -973,8 +976,10 @@ public partial class MainViewModel
         return (appHost, nuget);
     }
 
-    private async Task<bool> IsDotnetSdkAvailableAsync()
+    // 快取整個 session：dotnet --version 冷啟動要數秒，且與後面的 host build 是兩次冷啟動；啟動時先暖機一次，按下時就不用等
+    internal async Task<bool> IsDotnetSdkAvailableAsync()
     {
+        if (_dotnetSdkChecked) return _dotnetSdkAvailable;
         try
         {
             var psi = new System.Diagnostics.ProcessStartInfo
@@ -987,11 +992,11 @@ public partial class MainViewModel
                 CreateNoWindow = true
             };
             using var p = System.Diagnostics.Process.Start(psi);
-            if (p == null) return false;
-            await p.WaitForExitAsync();
-            return p.ExitCode == 0;
+            _dotnetSdkAvailable = p != null && (await Task.Run(async () => { await p.WaitForExitAsync(); return p.ExitCode; })) == 0;
         }
-        catch { return false; }
+        catch { _dotnetSdkAvailable = false; }
+        _dotnetSdkChecked = true;
+        return _dotnetSdkAvailable;
     }
 
     private List<DockerService> AllServices() =>
