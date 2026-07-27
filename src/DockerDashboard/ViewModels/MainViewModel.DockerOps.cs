@@ -136,6 +136,7 @@ public partial class MainViewModel
             StatusMessage = successMessage;
     }
 
+    // 全部啟動 = Fast Dev（預設就跑最新 code、最快）：對每個專案目錄啟用 Fast Dev（host build + 掛 dll + up --build）
     [RelayCommand]
     private async Task AllUpAsync()
     {
@@ -145,17 +146,10 @@ public partial class MainViewModel
             return;
         }
 
-        if (!await ConfirmBatchOverridesFastDevAsync(AllServices())) return;
-
-        await RunComposeBatchAsync(
-            Projects.SelectMany(p => p.ComposeFiles).ToList(),
-            (dir, ct) => _dockerCli.ComposeUpFastWithLogAsync(dir, AppendLog, ct: ct),
-            "正在並行啟動所有服務（快速模式）...",
-            "▶ 全部啟動（快速模式，不重建 image）",
-            "啟動",
-            "✅ 所有服務已啟動",
-            "⚠ {0} 個服務啟動失敗",
-            Math.Clamp(_batchStartupParallelism, 1, 8));
+        foreach (var group in AllServices()
+                     .Where(s => !s.IsFastDev)
+                     .GroupBy(s => s.WorkingDirectory, StringComparer.OrdinalIgnoreCase))
+            await EnableFastDevServicesAsync(group.Key, group.ToList());
     }
 
     [RelayCommand]

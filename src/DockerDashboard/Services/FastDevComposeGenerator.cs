@@ -22,6 +22,8 @@ public static class FastDevComposeGenerator
         var dll = ContainerDllPath(config);
         var sb = new StringBuilder();
         sb.AppendLine($"  {serviceName}:");
+        // 用獨立 tag :fastdev，避免 build.target base 蓋掉正式 image（正式 image 是含 code 的完整版，蓋掉後一般 AllUp 會起不來），對齊 VS 的 :dev
+        sb.AppendLine($"    image: {serviceName}:fastdev");
         // 只 build Dockerfile 的 base 階段（純 aspnet runtime，不含 code），對齊 VS 的 build.target: base：
         // 秒殺、不做完整 image build；build context/dockerfile 由 docker-compose.build.yml 提供
         sb.AppendLine("    build:");

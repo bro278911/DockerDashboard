@@ -37,6 +37,7 @@ public class FastDevComposeGeneratorTests
 
         Assert.DoesNotContain("services:", block);
         Assert.Contains("  orderbackend:", block);
+        Assert.Contains("image: orderbackend:fastdev", block);
         Assert.Contains("build:", block);
         Assert.Contains("target: base", block);
         Assert.Contains("working_dir: /app", block);

@@ -45,9 +45,9 @@
                         Command="{Binding AllUpCommand}"
                         IsEnabled="{Binding CanAllUp}"
                         Foreground="#4CAF50"
-                        ToolTip="啟動所有服務（不重建 image，速度快）">
+                        ToolTip="全部啟動（Fast Dev）：host build + 掛最新 dll 整包啟動，跑最新 code、不重建 image、改 .cs 約 5 秒生效（需 host .NET SDK）">
                     <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon Kind="PlayCircle" VerticalAlignment="Center" />
+                        <materialDesign:PackIcon Kind="Flash" VerticalAlignment="Center" />
                         <TextBlock Text="全部啟動" Margin="6,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
@@ -64,17 +64,6 @@
                 </Button>
 
                 <Separator Style="{StaticResource MaterialDesignLightSeparator}" Margin="8,0" />
-
-                <Button Style="{StaticResource MaterialDesignFlatButton}"
-                        Command="{Binding ToggleProjectFastDevCommand}"
-                        CommandParameter="{Binding SelectedProject}"
-                        Foreground="#FF9800"
-                        ToolTip="Fast Dev All：對左側選中的專案整包進 host-build dev 模式（改 C# 約 5 秒生效、不重建 image；需 host .NET SDK）。先選一個專案。">
-                    <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon Kind="FlashOutline" VerticalAlignment="Center" />
-                        <TextBlock Text="Fast Dev All" Margin="6,0,0,0" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
 
                 <Button Style="{StaticResource MaterialDesignFlatButton}"
                         Command="{Binding ToggleFastDevAutoReloadCommand}"
