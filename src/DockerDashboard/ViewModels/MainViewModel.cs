@@ -53,13 +53,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private bool _fastDevAutoReloadEnabled = true;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StartButtonText))]
     private DockerService? _selectedService;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StartButtonText))]
     private DockerProject? _selectedProject;
 
     [ObservableProperty]
     private ComposeFile? _selectedComposeFile;
+
+    // 傳統操作模式開關（設定持久化）：false 只露 Fast Dev，true 才顯示舊操作
+    [ObservableProperty]
+    private bool _showClassicControls;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAllUp))]
@@ -88,6 +94,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private int _stoppedCount;
 
     public bool CanAllUp => !IsOperating && TotalCount > 0 && RunningCount < TotalCount;
+
+    // 上方啟動鈕字：跟左側選取範圍走，讓「按下會起什麼」一眼看得出來，不會誤以為都是全部
+    public string StartButtonText =>
+        SelectedService != null ? $"啟動 {SelectedService.Name}"
+        : SelectedProject != null ? $"啟動 {SelectedProject.Name}"
+        : "全部啟動";
     public bool CanRebuild => !IsOperating && TotalCount > 0;
     public bool CanAllDown => !IsOperating && RunningCount > 0;
     public bool CanCancelOperation => IsOperating && !IsCancelling;
@@ -236,6 +248,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _batchStartupParallelism = Math.Clamp(settings.StartupParallelism, 1, 8);
         _fastDevReload.IsEnabled = settings.FastDevAutoReloadEnabled;
         FastDevAutoReloadEnabled = settings.FastDevAutoReloadEnabled;
+        ShowClassicControls = settings.ClassicControlsEnabled;
     }
 
     internal void RestoreFastDevStateFromSettings(AppSettings settings)

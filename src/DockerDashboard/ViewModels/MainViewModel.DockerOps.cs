@@ -136,7 +136,8 @@ public partial class MainViewModel
             StatusMessage = successMessage;
     }
 
-    // 全部啟動 = Fast Dev（預設就跑最新 code、最快）：對每個專案目錄啟用 Fast Dev（host build + 掛 dll + up --build）
+    // 啟動 = Fast Dev（預設就跑最新 code、最快）：host build + 掛 dll + up --build。
+    // 範圍跟左側選取走：選了 service 只起該 service、選了專案起該專案，沒選才起全部。
     [RelayCommand]
     private async Task AllUpAsync()
     {
@@ -146,7 +147,13 @@ public partial class MainViewModel
             return;
         }
 
-        foreach (var group in AllServices()
+        // 選取範圍決定要起哪些：單一 service > 整個專案 > 全部
+        IEnumerable<DockerService> scope =
+            SelectedService != null ? [SelectedService]
+            : SelectedProject != null ? ProjectServices(SelectedProject)
+            : AllServices();
+
+        foreach (var group in scope
                      .Where(s => !s.IsFastDev)
                      .GroupBy(s => s.WorkingDirectory, StringComparer.OrdinalIgnoreCase))
             await EnableFastDevServicesAsync(group.Key, group.ToList());
@@ -378,6 +385,14 @@ public partial class MainViewModel
     {
         if (service == null) return;
 
+        // 在 Fast Dev 中：完整重建 = 離開 Fast Dev。DisableFastDevServicesAsync 會清狀態、保護同目錄 sibling，並以 up --build 換回正式 image
+        if (service.IsFastDev)
+        {
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔨 {service.Name} 離開 Fast Dev，重建正式 image");
+            await DisableFastDevServicesAsync([service]);
+            return;
+        }
+
         var cts = new CancellationTokenSource();
         _operationCts?.Dispose();
         _operationCts = cts;
@@ -428,103 +443,6 @@ public partial class MainViewModel
             StatusMessage = "⏹ 操作已取消";
     }
 
-    [RelayCommand]
-    private async Task ComposeUpAsync(ComposeFile? compose)
-    {
-        if (compose == null) return;
-
-        var cts = new CancellationTokenSource();
-        _operationCts?.Dispose();
-        _operationCts = cts;
-        var ct = cts.Token;
-
-        IsOperating = true;
-        IsCancelling = false;
-        StatusMessage = $"正在啟動 {compose.FileName}...";
-        AppendLog($"[{DateTime.Now:HH:mm:ss}] ▶ 啟動 {compose.FileName}");
-
-        bool wasCancelled = false;
-        try
-        {
-            var (exitCode, _) = await _dockerCli.ComposeUpFastWithLogAsync(compose.DirectoryPath, AppendLog, ct: ct);
-            if (exitCode == 0)
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 啟動完成");
-            else
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {compose.FileName} 啟動失敗");
-            StatusMessage = exitCode == 0 ? $"✅ {compose.FileName} 已啟動" : $"⚠ {compose.FileName} 啟動失敗";
-        }
-        catch (OperationCanceledException)
-        {
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {compose.FileName} 例外: {ex.Message}");
-            StatusMessage = $"⚠ {compose.FileName} 啟動失敗";
-        }
-        finally
-        {
-            wasCancelled = cts.IsCancellationRequested;
-            if (ReferenceEquals(_operationCts, cts))
-                _operationCts = null;
-            cts.Dispose();
-            await _monitor.ForceRefreshAsync();
-            IsCancelling = false;
-            IsOperating = false;
-        }
-
-        if (wasCancelled)
-            StatusMessage = "⏹ 操作已取消";
-    }
-
-    [RelayCommand]
-    private async Task ComposeDownAsync(ComposeFile? compose)
-    {
-        if (compose == null) return;
-
-        var cts = new CancellationTokenSource();
-        _operationCts?.Dispose();
-        _operationCts = cts;
-        var ct = cts.Token;
-
-        IsOperating = true;
-        IsCancelling = false;
-        StatusMessage = $"正在停止 {compose.FileName}...";
-        AppendLog($"[{DateTime.Now:HH:mm:ss}] ■ 停止 {compose.FileName}");
-
-        bool wasCancelled = false;
-        try
-        {
-            var (exitCode, _) = await _dockerCli.ComposeDownWithLogAsync(compose.DirectoryPath, AppendLog, ct);
-            if (exitCode == 0)
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} 停止完成");
-            else
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {compose.FileName} 停止失敗");
-            StatusMessage = exitCode == 0 ? $"✅ {compose.FileName} 已停止" : $"⚠ {compose.FileName} 停止失敗";
-        }
-        catch (OperationCanceledException)
-        {
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {compose.FileName} 例外: {ex.Message}");
-            StatusMessage = $"⚠ {compose.FileName} 停止失敗";
-        }
-        finally
-        {
-            wasCancelled = cts.IsCancellationRequested;
-            if (ReferenceEquals(_operationCts, cts))
-                _operationCts = null;
-            cts.Dispose();
-            await _monitor.ForceRefreshAsync();
-            IsCancelling = false;
-            IsOperating = false;
-        }
-
-        if (wasCancelled)
-            StatusMessage = "⏹ 操作已取消";
-    }
 
     [RelayCommand]
     private async Task RemoveProjectAsync(DockerProject? project)
@@ -627,11 +545,16 @@ public partial class MainViewModel
         StatusMessage = "重新掃描完成";
     }
 
+    // 套用最新 code（改了 C#）：已在 Fast Dev 就熱重載，否則先進 Fast Dev（掛最新 dll 起來 = 跑最新 code）
     [RelayCommand]
-    private async Task ToggleFastDevServiceAsync(DockerService? service)
+    private async Task ApplyLatestCodeServiceAsync(DockerService? service)
     {
         if (service == null) return;
-        if (service.IsFastDev) { await DisableFastDevServicesAsync([service]); return; }
+        if (service.IsFastDev)
+        {
+            await OnFastDevSolutionChangedAsync(service.WorkingDirectory);
+            return;
+        }
         await EnableFastDevServicesAsync(service.WorkingDirectory, [service]);
     }
 

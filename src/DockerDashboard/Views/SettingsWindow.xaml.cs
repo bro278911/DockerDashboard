@@ -29,6 +29,7 @@ public partial class SettingsWindow : Window
         BuildKitSlider.Value = settings.BuildKitParallelism;
         StartupParallelSlider.Value = Math.Clamp(settings.StartupParallelism, 1, 8);
         AutoCheckUpdateToggle.IsChecked = settings.AutoCheckUpdate;
+        ClassicControlsToggle.IsChecked = settings.ClassicControlsEnabled;
         CurrentVersionText.Text = updateService.CurrentVersion;
 
         if (settings.DockerMode == DockerMode.Wsl2)
@@ -229,6 +230,7 @@ public partial class SettingsWindow : Window
         _settings.BuildKitParallelism = Math.Clamp((int)BuildKitSlider.Value, 0, 8);
         _settings.StartupParallelism = Math.Clamp((int)StartupParallelSlider.Value, 1, 8);
         _settings.AutoCheckUpdate = AutoCheckUpdateToggle.IsChecked == true;
+        _settings.ClassicControlsEnabled = ClassicControlsToggle.IsChecked == true;
 
         if (string.IsNullOrEmpty(_settings.WslDistroName))
             _settings.WslDistroName = "Ubuntu";
