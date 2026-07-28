@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -87,6 +90,96 @@ public partial class DockerRepairWindow : Window
         }
     }
 
+    // 砍掉佔 host port 80 的非-docker 進程（wslrelay 等），解除與 nginx 的埠衝突
+    private async void ReleasePort80_Click(object sender, RoutedEventArgs e)
+    {
+        SetRunning(true);
+        _log.Clear();
+        LogText.Text = string.Empty;
+        StatusLabel.Text = "釋放 Port 80";
+        try
+        {
+            AppendLog("▶ 掃描 host port 80 佔用...");
+            var listeners = await Task.Run(FindPort80Listeners);
+            if (listeners.Count == 0)
+            {
+                AppendLog("ℹ Port 80 沒有 LISTENING 佔用");
+                return;
+            }
+
+            var killed = 0;
+            foreach (var (pid, addr) in listeners)
+            {
+                string name;
+                try { name = Process.GetProcessById(pid).ProcessName; }
+                catch { continue; }
+
+                // docker 自己的 listener 不砍
+                if (name.Contains("docker", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("vpnkit", StringComparison.OrdinalIgnoreCase))
+                {
+                    AppendLog($"  跳過 docker 自身：{name} (PID {pid}, {addr})");
+                    continue;
+                }
+
+                try
+                {
+                    Process.GetProcessById(pid).Kill(entireProcessTree: true);
+                    AppendLog($"  ✅ 已砍：{name} (PID {pid}, {addr})");
+                    killed++;
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"  ⚠ {name} (PID {pid}) 砍失敗：{ex.Message}");
+                }
+            }
+
+            AppendLog(string.Empty);
+            AppendLog(killed > 0
+                ? $"✅ 已釋放 Port 80，砍掉 {killed} 個非-docker 佔用進程。localhost 現在應該走 docker。"
+                : "ℹ 沒有可砍的非-docker 佔用（都是 docker 自身）");
+            StatusLabel.Text = "完成";
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"❌ 例外：{ex.Message}");
+            StatusLabel.Text = "發生錯誤";
+        }
+        finally
+        {
+            SetRunning(false);
+        }
+    }
+
+    // 解析 netstat，回傳 LISTENING 在 port 80 的 (PID, 本機位址)；跳過 System/Idle(0,4)
+    private static List<(int Pid, string Address)> FindPort80Listeners()
+    {
+        var result = new List<(int, string)>();
+        var seen = new HashSet<int>();
+        var psi = new ProcessStartInfo
+        {
+            FileName = "netstat",
+            Arguments = "-ano -p TCP",
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        using var p = Process.Start(psi);
+        if (p == null) return result;
+        var output = p.StandardOutput.ReadToEnd();
+        p.WaitForExit();
+
+        foreach (var line in output.Split('\n'))
+        {
+            var t = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (t.Length < 5 || t[0] != "TCP" || t[3] != "LISTENING") continue;
+            if (!t[1].EndsWith(":80", StringComparison.Ordinal)) continue;
+            if (!int.TryParse(t[4], out var pid) || pid <= 4) continue;
+            if (seen.Add(pid)) result.Add((pid, t[1]));
+        }
+        return result;
+    }
+
     protected override void OnClosed(EventArgs e)
     {
         _cts?.Cancel();
@@ -117,6 +210,7 @@ public partial class DockerRepairWindow : Window
         Dispatcher.InvokeAsync(() =>
         {
             RepairBtn.IsEnabled = !running;
+            ReleasePort80Btn.IsEnabled = !running;
             RepairProgress.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
             PruneDanglingCheck.IsEnabled = !running;
             PruneAllImagesCheck.IsEnabled = !running;
