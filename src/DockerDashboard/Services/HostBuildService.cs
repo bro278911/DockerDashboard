@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -25,20 +26,55 @@ public class HostBuildService
     }
 
     public async Task<(int ExitCode, string Output)> BuildAsync(
-        string? solutionPath, IReadOnlyList<string> fallbackProjectFullPaths,
+        string? solutionPath, IReadOnlyList<string> serviceProjectFullPaths,
         Action<string> onOutput, CancellationToken ct)
     {
+        // 有 solution + 服務專案清單 → 產暫時 .slnf 只 build 這些服務（相依如 SharedLibrary 自動含入），跳過 Tests、單次呼叫
+        if (!string.IsNullOrEmpty(solutionPath) && serviceProjectFullPaths.Count > 0)
+        {
+            string? slnf = null;
+            try
+            {
+                slnf = WriteSolutionFilter(solutionPath, serviceProjectFullPaths);
+                return await RunDotnetBuildAsync(slnf, onOutput, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                onOutput($"[.slnf 產生失敗，改 build 整包 solution] {ex.Message}");
+                return await RunDotnetBuildAsync(solutionPath, onOutput, ct);
+            }
+            finally
+            {
+                if (slnf != null) try { File.Delete(slnf); } catch { }
+            }
+        }
+
         if (!string.IsNullOrEmpty(solutionPath))
             return await RunDotnetBuildAsync(solutionPath, onOutput, ct);
 
         var aggregate = new StringBuilder();
-        foreach (var project in fallbackProjectFullPaths)
+        foreach (var project in serviceProjectFullPaths)
         {
             var (code, output) = await RunDotnetBuildAsync(project, onOutput, ct);
             aggregate.AppendLine(output);
             if (code != 0) return (code, aggregate.ToString());
         }
         return (0, aggregate.ToString());
+    }
+
+    // .slnf 只列服務專案（projects 相對 solution 目錄）；檔案放暫存不污染 repo
+    private static string WriteSolutionFilter(string solutionPath, IReadOnlyList<string> serviceProjectFullPaths)
+    {
+        var slnFull = Path.GetFullPath(solutionPath);
+        var slnDir = Path.GetDirectoryName(slnFull)!;
+        var projects = serviceProjectFullPaths
+            .Select(p => Path.GetRelativePath(slnDir, Path.GetFullPath(p)).Replace('/', '\\'))
+            .Select(r => "\"" + r.Replace("\\", "\\\\") + "\"");
+        var json = "{\"solution\":{\"path\":\"" + slnFull.Replace("\\", "\\\\") + "\",\"projects\":["
+            + string.Join(",", projects) + "]}}";
+        var path = Path.Combine(Path.GetTempPath(), "fastdev-" + Guid.NewGuid().ToString("N") + ".slnf");
+        File.WriteAllText(path, json);
+        return path;
     }
 
     private static async Task<(int ExitCode, string Output)> RunDotnetBuildAsync(

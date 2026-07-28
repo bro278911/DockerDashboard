@@ -111,9 +111,18 @@ public static class FastDevDetector
         while (stack.Count > 0)
         {
             var dir = stack.Pop();
-            foreach (var file in Directory.EnumerateFiles(dir, "*.csproj"))
+            string[] files, subs;
+            try
+            {
+                // 沒權限/路徑過長的目錄跳過，不讓例外中斷整個掃描（worktree 常有這類目錄）
+                files = Directory.GetFiles(dir, "*.csproj");
+                subs = Directory.GetDirectories(dir);
+            }
+            catch { continue; }
+
+            foreach (var file in files)
                 yield return file;
-            foreach (var sub in Directory.EnumerateDirectories(dir))
+            foreach (var sub in subs)
             {
                 var name = Path.GetFileName(sub);
                 if (name.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
