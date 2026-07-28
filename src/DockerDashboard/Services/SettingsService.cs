@@ -8,7 +8,7 @@ namespace DockerDashboard.Services;
 
 public class SettingsService
 {
-    private static readonly string SettingsPath = Path.Combine(
+    private static readonly string DefaultSettingsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DockerDashboard",
         "settings.json");
@@ -18,23 +18,28 @@ public class SettingsService
         WriteIndented = true
     };
 
+    private readonly string _settingsPath;
     private AppSettings? _cached;
+
+    public SettingsService() : this(DefaultSettingsPath) { }
+
+    internal SettingsService(string settingsPath) => _settingsPath = settingsPath;
 
     public async Task<AppSettings> LoadAsync()
     {
         if (_cached != null) return _cached;
 
-        if (!File.Exists(SettingsPath))
+        if (!File.Exists(_settingsPath))
             return _cached = new AppSettings();
 
-        var json = await File.ReadAllTextAsync(SettingsPath);
+        var json = await File.ReadAllTextAsync(_settingsPath);
         return _cached = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
     }
 
     public async Task SaveAsync(AppSettings settings)
     {
         _cached = settings;
-        Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-        await File.WriteAllTextAsync(SettingsPath, JsonSerializer.Serialize(settings, JsonOptions));
+        Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath)!);
+        await File.WriteAllTextAsync(_settingsPath, JsonSerializer.Serialize(settings, JsonOptions));
     }
 }

@@ -24,14 +24,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ComposeFileScanner _scanner;
     private readonly SettingsService _settingsService;
     private readonly ContainerMonitorService _monitor;
-    private readonly WatchRebuildService _watchService;
-    private readonly ComposeWatchService _composeWatch;
+    private readonly HostBuildService _hostBuild;
+    private readonly FastDevReloadService _fastDevReload;
     private readonly UpdateService _updateService;
     private Forms.NotifyIcon? _notifyIcon;
     private readonly ConcurrentQueue<string> _pendingLogQueue = new();
     private int _isLogFlushScheduled;
     private int _batchStartupParallelism = 3;
-    private bool _autoWatchEnabled;
+    private bool _dotnetSdkChecked;
+    private bool _dotnetSdkAvailable;
     private CancellationTokenSource? _operationCts;
 
     public ObservableCollection<DockerProject> Projects { get; } = [];
@@ -49,10 +50,22 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private string _logFilter = string.Empty;
 
     [ObservableProperty]
+    private bool _fastDevAutoReloadEnabled = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StartButtonText))]
     private DockerService? _selectedService;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StartButtonText))]
+    private DockerProject? _selectedProject;
+
+    [ObservableProperty]
     private ComposeFile? _selectedComposeFile;
+
+    // 傳統操作模式開關（設定持久化）：false 只露 Fast Dev，true 才顯示舊操作
+    [ObservableProperty]
+    private bool _showClassicControls;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAllUp))]
@@ -81,6 +94,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private int _stoppedCount;
 
     public bool CanAllUp => !IsOperating && TotalCount > 0 && RunningCount < TotalCount;
+
+    // 上方啟動鈕字：跟左側選取範圍走，讓「按下會起什麼」一眼看得出來，不會誤以為都是全部
+    public string StartButtonText =>
+        SelectedService != null ? $"啟動 {SelectedService.Name}"
+        : SelectedProject != null ? $"啟動 {SelectedProject.Name}"
+        : "全部啟動";
     public bool CanRebuild => !IsOperating && TotalCount > 0;
     public bool CanAllDown => !IsOperating && RunningCount > 0;
     public bool CanCancelOperation => IsOperating && !IsCancelling;
@@ -101,8 +120,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ComposeFileScanner scanner,
         SettingsService settingsService,
         ContainerMonitorService monitor,
-        WatchRebuildService watchService,
-        ComposeWatchService composeWatch,
+        HostBuildService hostBuild,
+        FastDevReloadService fastDevReload,
         UpdateService updateService)
     {
         _dockerCli = dockerCli;
@@ -110,15 +129,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _scanner = scanner;
         _settingsService = settingsService;
         _monitor = monitor;
-        _watchService = watchService;
-        _composeWatch = composeWatch;
+        _hostBuild = hostBuild;
+        _fastDevReload = fastDevReload;
         _updateService = updateService;
 
         _monitor.ContainersUpdated += OnContainersUpdated;
         _monitor.ContainerCrashed += OnContainerCrashed;
-        _watchService.SetRebuildCallback(OnAutoRebuildTriggeredAsync);
-        _composeWatch.OnOutput = AppendLog;
-        _composeWatch.OnProcessExited = OnComposeWatchExited;
+        _fastDevReload.OnSolutionChanged = OnFastDevSolutionChangedAsync;
 
         LogView = CollectionViewSource.GetDefaultView(LogLines);
         LogView.Filter = LogFilterPredicate;
@@ -191,14 +208,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _monitor.Start(TimeSpan.FromSeconds(settings.PollIntervalSeconds));
         await _monitor.ForceRefreshAsync();
 
-        ApplyWatchSettings(settings);
-        RestoreWatchStateFromSettings(settings);
+        ApplySettings(settings);
+        RestoreFastDevStateFromSettings(settings);
 
         StatusMessage = IsDockerAvailable ? "就緒" : "⚠ Docker 未連線（顯示快取清單，連線恢復後自動更新）";
 
         // 背景靜默檢查更新，不阻塞啟動
         if (settings.AutoCheckUpdate)
             _ = CheckUpdateAsync();
+
+        // 背景暖機 dotnet SDK 檢查：按下全部啟動(Fast Dev)時就不必等 dotnet 冷啟動
+        _ = IsDotnetSdkAvailableAsync();
     }
 
     private async Task<bool> TryConnectDockerAsync(DockerMode mode)
@@ -223,72 +243,24 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return false;
     }
 
-    internal void ApplyWatchSettings(AppSettings settings)
+    internal void ApplySettings(AppSettings settings)
     {
-        _watchService.IsEnabled = settings.AutoWatchEnabled;
-        _watchService.DebounceDelay = TimeSpan.FromSeconds(settings.WatchDebounceSeconds);
         _batchStartupParallelism = Math.Clamp(settings.StartupParallelism, 1, 8);
-        _autoWatchEnabled = settings.AutoWatchEnabled;
+        _fastDevReload.IsEnabled = settings.FastDevAutoReloadEnabled;
+        FastDevAutoReloadEnabled = settings.FastDevAutoReloadEnabled;
+        ShowClassicControls = settings.ClassicControlsEnabled;
     }
 
-    internal void RestoreWatchStateFromSettings(AppSettings settings)
+    internal void RestoreFastDevStateFromSettings(AppSettings settings)
     {
-        var wslDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var project in Projects)
-        {
-            foreach (var compose in project.ComposeFiles)
-            {
-                foreach (var service in compose.Services)
-                {
-                    service.IsWatching = settings.WatchEnabledServiceKeys.Contains(service.WatchKey);
-                    if (!service.IsWatching) continue;
+        foreach (var service in Projects.SelectMany(p => p.ComposeFiles).SelectMany(c => c.Services))
+            service.IsFastDev = settings.FastDevEnabledServiceKeys.Contains(service.WatchKey);
 
-                    if (DockerCliService.IsWslUncPath(service.WorkingDirectory))
-                        wslDirs.Add(service.WorkingDirectory);
-                    else
-                        _watchService.AddWatch(service.WorkingDirectory, service.Name);
-                }
-            }
-        }
-
-        foreach (var dir in wslDirs)
-            UpdateComposeWatchForDirectory(dir);
-    }
-
-    private async Task OnAutoRebuildTriggeredAsync(string workingDirectory, string serviceName)
-    {
-        AppendLog($"[{DateTime.Now:HH:mm:ss}] 👁 Auto Watch: {serviceName} 偵測到變動，開始自動重建...");
-        try
-        {
-            var (exitCode, _) = await _dockerCli.ComposeRebuildRestartWithLogAsync(
-                workingDirectory, AppendLog, serviceName);
-            if (exitCode == 0)
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ Auto Watch: {serviceName} 自動重建完成");
-            else
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ Auto Watch: {serviceName} 自動重建失敗 (exit {exitCode})");
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ Auto Watch: {serviceName} 例外: {ex.Message}");
-        }
-        finally
-        {
-            await _monitor.ForceRefreshAsync();
-        }
-    }
-
-    private void OnComposeWatchExited(string workingDirectory, int exitCode)
-    {
-        _ = Application.Current?.Dispatcher.InvokeAsync(async () =>
-        {
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ compose watch 異常退出 (exit code: {exitCode})：{workingDirectory}，已關閉該專案的 Auto Watch");
-            foreach (var project in Projects)
-                foreach (var compose in project.ComposeFiles)
-                    foreach (var service in compose.Services)
-                        if (string.Equals(service.WorkingDirectory, workingDirectory, StringComparison.OrdinalIgnoreCase))
-                            service.IsWatching = false;
-            await SaveSettingsAsync();
-        });
+        foreach (var dir in Projects.SelectMany(p => p.ComposeFiles).SelectMany(c => c.Services)
+                     .Where(s => s.IsFastDev)
+                     .Select(s => s.WorkingDirectory)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+            _fastDevReload.Watch(dir);
     }
 
     internal void ApplyDockerModeSettings(AppSettings settings)
@@ -351,11 +323,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var settings = await _settingsService.LoadAsync();
         settings.ImportedFolders = [.. Projects.Select(p => p.FolderPath)];
         settings.RecentlyRemovedFolders = [.. RecentlyRemovedFolders];
-        settings.WatchEnabledServiceKeys = [.. Projects
-            .SelectMany(p => p.ComposeFiles)
-            .SelectMany(c => c.Services)
-            .Where(s => s.IsWatching)
-            .Select(s => s.WatchKey)];
         await _settingsService.SaveAsync(settings);
     }
 
@@ -524,8 +491,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _monitor.ContainersUpdated -= OnContainersUpdated;
         _monitor.ContainerCrashed -= OnContainerCrashed;
         _monitor.Dispose();
-        _watchService.Dispose();
-        _composeWatch.Dispose();
+        _fastDevReload.Dispose();
         GC.SuppressFinalize(this);
     }
 }

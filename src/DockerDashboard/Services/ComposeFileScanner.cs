@@ -183,6 +183,19 @@ public class ComposeFileScanner
             if (service.Value.TryGetProperty("container_name", out var cnEl))
                 dockerService.ContainerName = cnEl.GetString() ?? string.Empty;
 
+            if (service.Value.TryGetProperty("build", out var buildEl) && buildEl.ValueKind == JsonValueKind.Object)
+            {
+                var context = buildEl.TryGetProperty("context", out var ctxEl) ? ctxEl.GetString() : null;
+                var dockerfile = buildEl.TryGetProperty("dockerfile", out var dfEl) ? dfEl.GetString() : null;
+                if (!string.IsNullOrEmpty(dockerfile))
+                {
+                    var baseDir = !string.IsNullOrEmpty(context) && Path.IsPathRooted(context) ? context : directory;
+                    dockerService.DockerfilePath = Path.IsPathRooted(dockerfile)
+                        ? dockerfile
+                        : Path.GetFullPath(Path.Combine(baseDir, dockerfile));
+                }
+            }
+
             if (service.Value.TryGetProperty("ports", out var portsEl) && portsEl.ValueKind == JsonValueKind.Array)
             {
                 var portStrings = new List<string>();

@@ -45,32 +45,10 @@
                         Command="{Binding AllUpCommand}"
                         IsEnabled="{Binding CanAllUp}"
                         Foreground="#4CAF50"
-                        ToolTip="啟動所有服務（不重建 image，速度快）">
+                        ToolTip="Fast Dev 啟動（host build + 掛最新 dll、跑最新 code、改 .cs 約 5 秒生效，需 host .NET SDK）。左側選了 service 只起該 service、選了專案起該專案，沒選才起全部。">
                     <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon Kind="PlayCircle" VerticalAlignment="Center" />
-                        <TextBlock Text="全部啟動" Margin="6,0,0,0" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
-
-                <Button Style="{StaticResource MaterialDesignFlatButton}"
-                        Command="{Binding AllUpIncrementalBuildCommand}"
-                        IsEnabled="{Binding CanRebuild}"
-                        Foreground="#2196F3"
-                        ToolTip="增量重建所有 image（使用 cache，只重建有變動的層，速度快）">
-                    <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon Kind="Refresh" VerticalAlignment="Center" />
-                        <TextBlock Text="增量重建" Margin="6,0,0,0" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
-
-                <Button Style="{StaticResource MaterialDesignFlatButton}"
-                        Command="{Binding AllUpBuildCommand}"
-                        IsEnabled="{Binding CanAllUp}"
-                        Foreground="#FF9800"
-                        ToolTip="強制重建所有 image（--no-cache --pull，重新拉取 base image 從頭建，耗時較長）">
-                    <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon Kind="Hammer" VerticalAlignment="Center" />
-                        <TextBlock Text="完整重建" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        <materialDesign:PackIcon Kind="Flash" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding StartButtonText}" Margin="6,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
 
@@ -88,22 +66,43 @@
                 <Separator Style="{StaticResource MaterialDesignLightSeparator}" Margin="8,0" />
 
                 <Button Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{Binding ToggleFastDevAutoReloadCommand}"
+                        ToolTip="自動熱重載開關：Fast Dev 中改 .cs 是否自動 build+重啟（關掉可攢一批改動再手動重載）">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon VerticalAlignment="Center">
+                            <materialDesign:PackIcon.Style>
+                                <Style TargetType="materialDesign:PackIcon">
+                                    <Setter Property="Kind" Value="Fire" />
+                                    <Setter Property="Foreground" Value="Gray" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding FastDevAutoReloadEnabled}" Value="True">
+                                            <Setter Property="Foreground" Value="#FF5722" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </materialDesign:PackIcon.Style>
+                        </materialDesign:PackIcon>
+                        <TextBlock Text="自動熱重載" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <Button Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{Binding ManualReloadCommand}"
+                        ToolTip="手動重載：立刻 host build 並重啟有變動的 Fast Dev 服務（自動關閉時用）">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon Kind="Reload" VerticalAlignment="Center" />
+                        <TextBlock Text="手動重載" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <Separator Style="{StaticResource MaterialDesignLightSeparator}" Margin="8,0" />
+
+                <Button Style="{StaticResource MaterialDesignFlatButton}"
                         Command="{Binding RescanProjectsCommand}"
                         ToolTip="重新掃描所有資料夾">
                     <StackPanel Orientation="Horizontal">
                         <materialDesign:PackIcon Kind="Refresh" VerticalAlignment="Center" />
                         <TextBlock Text="重新掃描" Margin="6,0,0,0" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
-
-                <Button Style="{StaticResource MaterialDesignFlatButton}"
-                        Command="{Binding PullAllImagesCommand}"
-                        IsEnabled="{Binding CanRebuild}"
-                        ToolTip="拉取所有映像更新"
-                        Foreground="#9C27B0">
-                    <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon Kind="Download" VerticalAlignment="Center" />
-                        <TextBlock Text="拉取映像" Margin="6,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
 
@@ -235,27 +234,10 @@
                                                       Command="{Binding Data.ProjectUpCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
                                                       IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
+                                                      Visibility="{Binding Data.ShowClassicControls, Source={StaticResource Proxy}, Converter={StaticResource BoolToVisibilityConverter}}"
                                                       ToolTip="啟動此專案全部服務，不重建 image">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Play" />
-                                                </MenuItem.Icon>
-                                            </MenuItem>
-                                            <MenuItem Header="增量重建＋啟動"
-                                                      Command="{Binding Data.ProjectIncrementalBuildCommand, Source={StaticResource Proxy}}"
-                                                      CommandParameter="{Binding}"
-                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
-                                                      ToolTip="使用 cache，只重建有變動的層後啟動">
-                                                <MenuItem.Icon>
-                                                    <materialDesign:PackIcon Kind="Hammer" />
-                                                </MenuItem.Icon>
-                                            </MenuItem>
-                                            <MenuItem Header="強制重建＋啟動"
-                                                      Command="{Binding Data.ProjectBuildCommand, Source={StaticResource Proxy}}"
-                                                      CommandParameter="{Binding}"
-                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
-                                                      ToolTip="--no-cache 完整重建後啟動，耗時較長">
-                                                <MenuItem.Icon>
-                                                    <materialDesign:PackIcon Kind="HammerWrench" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <MenuItem Header="停止"
@@ -265,6 +247,15 @@
                                                       ToolTip="停止此專案全部服務">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Stop" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <Separator />
+                                            <MenuItem Header="Fast Dev All（整包熱重啟）"
+                                                      Command="{Binding Data.ToggleProjectFastDevCommand, Source={StaticResource Proxy}}"
+                                                      CommandParameter="{Binding}"
+                                                      ToolTip="整個專案進 host-build dev 模式：改 C# 約 5 秒生效、不重建 image（需 host 端 .NET SDK）">
+                                                <MenuItem.Icon>
+                                                    <materialDesign:PackIcon Kind="FlashOutline" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <Separator />
@@ -281,39 +272,12 @@
                                 </StackPanel>
                             </HierarchicalDataTemplate>
 
-                            <!-- Compose 檔案層級 -->
+                            <!-- Compose 檔案層級（操作與專案節點重複，故不另設右鍵選單；起停走專案節點或上方啟動鈕） -->
                             <HierarchicalDataTemplate DataType="{x:Type models:ComposeFile}"
                                                       ItemsSource="{Binding Services}">
                                 <StackPanel Orientation="Horizontal" Margin="2">
                                     <materialDesign:PackIcon Kind="Docker" Foreground="#2196F3" VerticalAlignment="Center" />
                                     <TextBlock Text="{Binding FileName}" Margin="6,0,0,0" VerticalAlignment="Center" />
-                                    <StackPanel.ContextMenu>
-                                        <ContextMenu>
-                                            <MenuItem Header="啟動全部服務" 
-                                                      Command="{Binding Data.ComposeUpCommand, Source={StaticResource Proxy}}"
-                                                      CommandParameter="{Binding}">
-                                                <MenuItem.Icon>
-                                                    <materialDesign:PackIcon Kind="Play" />
-                                                </MenuItem.Icon>
-                                            </MenuItem>
-                                            <MenuItem Header="停止全部服務"
-                                                      Command="{Binding Data.ComposeDownCommand, Source={StaticResource Proxy}}"
-                                                      CommandParameter="{Binding}">
-                                                <MenuItem.Icon>
-                                                    <materialDesign:PackIcon Kind="Stop" />
-                                                </MenuItem.Icon>
-                                            </MenuItem>
-                                            <Separator />
-                                            <MenuItem Header="拉取映像更新"
-                                                      Command="{Binding Data.ComposePullCommand, Source={StaticResource Proxy}}"
-                                                      CommandParameter="{Binding}"
-                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}">
-                                                <MenuItem.Icon>
-                                                    <materialDesign:PackIcon Kind="Download" />
-                                                </MenuItem.Icon>
-                                            </MenuItem>
-                                        </ContextMenu>
-                                    </StackPanel.ContextMenu>
                                 </StackPanel>
                             </HierarchicalDataTemplate>
 
@@ -326,28 +290,12 @@
                                     <TextBlock Text="{Binding Name}" Margin="6,0,0,0" VerticalAlignment="Center" />
                                     <TextBlock Text="{Binding Image}" Margin="8,0,0,0"
                                                Foreground="Gray" FontSize="11" VerticalAlignment="Center" />
-                                    <!-- Auto Watch 開關 -->
-                                    <Button Width="20" Height="20" Padding="0" Margin="6,0,0,0"
-                                            Command="{Binding Data.ToggleWatchServiceCommand, Source={StaticResource Proxy}}"
-                                            CommandParameter="{Binding}"
-                                            ToolTip="Auto Watch：啟用後，原始碼變動會自動重建並重啟此服務（需在設定開啟全域開關）">
-                                        <Button.Style>
-                                            <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignIconButton}">
-                                                <Setter Property="Foreground" Value="Gray" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsWatching}" Value="True">
-                                                        <Setter Property="Foreground" Value="#4CAF50" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Button.Style>
-                                        <materialDesign:PackIcon Kind="Eye" Width="13" Height="13" />
-                                    </Button>
                                     <StackPanel.ContextMenu>
                                         <ContextMenu>
                                             <MenuItem Header="啟動"
                                                       Command="{Binding Data.StartServiceCommand, Source={StaticResource Proxy}}"
-                                                      CommandParameter="{Binding}">
+                                                      CommandParameter="{Binding}"
+                                                      Visibility="{Binding Data.ShowClassicControls, Source={StaticResource Proxy}, Converter={StaticResource BoolToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Play" />
                                                 </MenuItem.Icon>
@@ -362,26 +310,39 @@
                                             <MenuItem Header="重啟（快速）"
                                                       Command="{Binding Data.RestartServiceCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
+                                                      Visibility="{Binding Data.ShowClassicControls, Source={StaticResource Proxy}, Converter={StaticResource BoolToVisibilityConverter}}"
                                                       ToolTip="只重啟 process，不重建 image">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Restart" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="重建重啟"
-                                                      Command="{Binding Data.RebuildRestartServiceCommand, Source={StaticResource Proxy}}"
+                                            <MenuItem Header="套用最新 code（改了 C#）"
+                                                      Command="{Binding Data.ApplyLatestCodeServiceCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
-                                                      ToolTip="重新 build image 後重啟（改動程式碼後使用）">
+                                                      ToolTip="改了 C# 用這個：host build + 熱重載，約 5 秒；服務沒在 Fast Dev 會自動進入（需 .NET SDK）">
                                                 <MenuItem.Icon>
-                                                    <materialDesign:PackIcon Kind="Hammer" />
+                                                    <materialDesign:PackIcon>
+                                                        <materialDesign:PackIcon.Style>
+                                                            <Style TargetType="materialDesign:PackIcon">
+                                                                <Setter Property="Kind" Value="FlashOutline" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsFastDev}" Value="True">
+                                                                        <Setter Property="Kind" Value="Flash" />
+                                                                        <Setter Property="Foreground" Value="Orange" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </materialDesign:PackIcon.Style>
+                                                    </materialDesign:PackIcon>
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <Separator />
-                                            <MenuItem Header="Auto Watch 開關"
-                                                      Command="{Binding Data.ToggleWatchServiceCommand, Source={StaticResource Proxy}}"
+                                            <MenuItem Header="完整重建（改了 Dockerfile/相依）"
+                                                      Command="{Binding Data.RebuildRestartServiceCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
-                                                      ToolTip="檔案變動自動重建">
+                                                      Visibility="{Binding Data.ShowClassicControls, Source={StaticResource Proxy}, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                      ToolTip="改了 Dockerfile 或 NuGet 相依才用：重新 build image（分鐘級）；服務在 Fast Dev 中會離開、換回正式 image">
                                                 <MenuItem.Icon>
-                                                    <materialDesign:PackIcon Kind="Eye" />
+                                                    <materialDesign:PackIcon Kind="Hammer" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <Separator />
@@ -452,6 +413,7 @@
                                     Command="{Binding StartServiceCommand}"
                                     CommandParameter="{Binding SelectedService}"
                                     IsEnabled="{Binding SelectedService.IsStopped}"
+                                    Visibility="{Binding ShowClassicControls, Converter={StaticResource BoolToVisibilityConverter}}"
                                     ToolTip="啟動" Foreground="#4CAF50">
                                 <materialDesign:PackIcon Kind="Play" />
                             </Button>
@@ -466,31 +428,35 @@
                                     Command="{Binding RestartServiceCommand}"
                                     CommandParameter="{Binding SelectedService}"
                                     IsEnabled="{Binding SelectedService.IsRunning}"
+                                    Visibility="{Binding ShowClassicControls, Converter={StaticResource BoolToVisibilityConverter}}"
                                     ToolTip="重啟（快速，不重建 image）" Foreground="#FF9800">
                                 <materialDesign:PackIcon Kind="Restart" />
+                            </Button>
+                            <Button Style="{StaticResource MaterialDesignIconButton}"
+                                    Command="{Binding ApplyLatestCodeServiceCommand}"
+                                    CommandParameter="{Binding SelectedService}"
+                                    ToolTip="套用最新 code（改了 C#）：host build + 熱重載，約 5 秒；沒在 Fast Dev 會自動進入">
+                                <materialDesign:PackIcon>
+                                    <materialDesign:PackIcon.Style>
+                                        <Style TargetType="materialDesign:PackIcon">
+                                            <Setter Property="Kind" Value="FlashOutline" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SelectedService.IsFastDev}" Value="True">
+                                                    <Setter Property="Kind" Value="Flash" />
+                                                    <Setter Property="Foreground" Value="Orange" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </materialDesign:PackIcon.Style>
+                                </materialDesign:PackIcon>
                             </Button>
                             <Button Style="{StaticResource MaterialDesignIconButton}"
                                     Command="{Binding RebuildRestartServiceCommand}"
                                     CommandParameter="{Binding SelectedService}"
                                     IsEnabled="{Binding SelectedService.IsRunning}"
-                                    ToolTip="重建重啟（重新 build image，改動程式碼後使用）" Foreground="#9C27B0">
+                                    Visibility="{Binding ShowClassicControls, Converter={StaticResource BoolToVisibilityConverter}}"
+                                    ToolTip="完整重建（改了 Dockerfile/相依）：重新 build image；在 Fast Dev 中會離開、換回正式 image" Foreground="#9C27B0">
                                 <materialDesign:PackIcon Kind="Hammer" />
-                            </Button>
-                            <!-- Auto Watch 開關 -->
-                            <Button Command="{Binding ToggleWatchServiceCommand}"
-                                    CommandParameter="{Binding SelectedService}"
-                                    ToolTip="Auto Watch：啟用後，原始碼變動自動重建並重啟（需在設定開啟全域開關）">
-                                <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignIconButton}">
-                                        <Setter Property="Foreground" Value="Gray" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding SelectedService.IsWatching}" Value="True">
-                                                <Setter Property="Foreground" Value="#4CAF50" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                                <materialDesign:PackIcon Kind="Eye" />
                             </Button>
                         </StackPanel>
                     </Grid>

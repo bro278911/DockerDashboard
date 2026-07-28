@@ -27,6 +27,13 @@ public interface IDockerCliService
     Task<(int ExitCode, string Output)> ComposeUpFastWithLogAsync(
         string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default);
 
+    Task<(int ExitCode, string Output)> ComposeUpAllAsync(
+        string workingDirectory, Action<string> onOutput,
+        CancellationToken ct, string? extraOverrideFile = null);
+
+    Task<(int ExitCode, string Output)> RestartContainerAsync(
+        string containerNameOrId, Action<string> onOutput, CancellationToken ct);
+
     Task<(int ExitCode, string Output)> ComposeDownWithLogAsync(
         string workingDirectory, Action<string> onOutput, CancellationToken ct = default);
 
@@ -36,13 +43,7 @@ public interface IDockerCliService
     Task<(int ExitCode, string Output)> ComposeRebuildRestartWithLogAsync(
         string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default);
 
-    Task<(int ExitCode, string Output)> ComposeForceRebuildWithLogAsync(
-        string workingDirectory, Action<string> onOutput, CancellationToken ct = default);
-
     Task<(int ExitCode, string Output)> ComposeStopWithLogAsync(
-        string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default);
-
-    Task<(int ExitCode, string Output)> ComposePullWithLogAsync(
         string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default);
 
     Task<string> GetContainerLogsAsync(string containerNameOrId, int tail = 30, CancellationToken ct = default);

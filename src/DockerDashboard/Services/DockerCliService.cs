@@ -51,6 +51,11 @@ public class DockerCliService : IDockerCliService
     public static bool IsWslUncPath(string path) =>
         !string.IsNullOrEmpty(path) && WslUncRegex.IsMatch(path);
 
+    internal string? NormalizeComposeOverridePath(string? extraOverrideFile) =>
+        IsWsl2 && !string.IsNullOrEmpty(extraOverrideFile)
+            ? ConvertToWslPath(extraOverrideFile)
+            : extraOverrideFile;
+
     private ProcessStartInfo CreatePsi(
         string command,
         IEnumerable<string> args,
@@ -231,10 +236,16 @@ public class DockerCliService : IDockerCliService
         return new ProcessStream(process);
     }
 
-    private List<string> BuildComposeArgs(string workingDirectory, IEnumerable<string> commandArgs)
+    private List<string> BuildComposeArgs(
+        string workingDirectory, IEnumerable<string> commandArgs, string? extraOverrideFile = null)
     {
         var args = new List<string>(ComposeArgs);
         args.AddRange(ComposeFileHelper.GetComposeFileArgs(workingDirectory));
+        if (!string.IsNullOrEmpty(extraOverrideFile))
+        {
+            args.Add("-f");
+            args.Add(extraOverrideFile);
+        }
         args.AddRange(commandArgs);
         return args;
     }
@@ -248,6 +259,21 @@ public class DockerCliService : IDockerCliService
 
         return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
     }
+
+    public async Task<(int ExitCode, string Output)> ComposeUpAllAsync(
+        string workingDirectory, Action<string> onOutput,
+        CancellationToken ct, string? extraOverrideFile = null)
+    {
+        // 整包 up --build：--build 才會建自訂 nginx（否則吃到本機公開 nginx image，路由設定沒進去 → 404）
+        // .NET 服務的 fastdev override 為 build.target: base，--build 只建 runtime 階段，仍很快
+        var args = BuildComposeArgs(
+            workingDirectory, ["up", "-d", "--build"], NormalizeComposeOverridePath(extraOverrideFile));
+        return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
+    }
+
+    public Task<(int ExitCode, string Output)> RestartContainerAsync(
+        string containerNameOrId, Action<string> onOutput, CancellationToken ct) =>
+        RunCommandWithLogAsync("docker", ["restart", containerNameOrId], null, onOutput, ct);
 
     public async Task<(int ExitCode, string Output)> ComposeDownWithLogAsync(
         string workingDirectory, Action<string> onOutput, CancellationToken ct = default)
@@ -280,33 +306,10 @@ public class DockerCliService : IDockerCliService
         return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct, withBuildEnv: true);
     }
 
-    public async Task<(int ExitCode, string Output)> ComposeForceRebuildWithLogAsync(
-        string workingDirectory, Action<string> onOutput, CancellationToken ct = default)
-    {
-        var buildArgs = BuildComposeArgs(workingDirectory, ["build", "--no-cache", "--pull"]);
-        var (buildExit, _) = await RunCommandWithLogAsync(
-            ComposeCommand, buildArgs, workingDirectory, onOutput, ct, withBuildEnv: true);
-        if (buildExit != 0)
-            return (buildExit, string.Empty);
-
-        var upArgs = BuildComposeArgs(workingDirectory, ["up", "-d", "--remove-orphans"]);
-        return await RunCommandWithLogAsync(ComposeCommand, upArgs, workingDirectory, onOutput, ct);
-    }
-
     public async Task<(int ExitCode, string Output)> ComposeStopWithLogAsync(
         string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default)
     {
         var args = BuildComposeArgs(workingDirectory, ["stop"]);
-        if (!string.IsNullOrEmpty(serviceName))
-            args.Add(serviceName);
-
-        return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
-    }
-
-    public async Task<(int ExitCode, string Output)> ComposePullWithLogAsync(
-        string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default)
-    {
-        var args = BuildComposeArgs(workingDirectory, ["pull"]);
         if (!string.IsNullOrEmpty(serviceName))
             args.Add(serviceName);
 

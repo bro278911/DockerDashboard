@@ -1,4 +1,5 @@
 using System.IO;
+using DockerDashboard.Models;
 using DockerDashboard.Services;
 using Xunit;
 
@@ -31,5 +32,18 @@ public class WslPathTests
     public void IsWslUncPath_判斷是否為WSL路徑(string input, bool expected)
     {
         Assert.Equal(expected, DockerCliService.IsWslUncPath(input));
+    }
+
+    [Fact]
+    public void NormalizeComposeOverridePath_Wsl2將Windows路徑轉成Wsl路徑()
+    {
+        var service = new DockerCliService { DockerMode = DockerMode.Wsl2 };
+
+        var actual = service.NormalizeComposeOverridePath(
+            @"C:\Users\dev\AppData\Roaming\DockerDashboard\fastdev\override.yml");
+
+        Assert.Equal(
+            "/mnt/c/Users/dev/AppData/Roaming/DockerDashboard/fastdev/override.yml",
+            actual);
     }
 }

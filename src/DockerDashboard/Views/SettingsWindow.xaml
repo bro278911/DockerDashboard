@@ -41,6 +41,20 @@
                     </DockPanel>
                 </StackPanel>
 
+                <!-- 操作模式 -->
+                <StackPanel Margin="0,0,0,16">
+                    <TextBlock Text="操作模式" Style="{StaticResource MaterialDesignSubtitle1TextBlock}" Margin="0,0,0,8" />
+                    <DockPanel>
+                        <TextBlock Text="啟用傳統操作（顯示普通啟動、重啟、完整重建等非 Fast Dev 功能）"
+                                   VerticalAlignment="Center" DockPanel.Dock="Left" TextWrapping="Wrap" MaxWidth="520" />
+                        <ToggleButton x:Name="ClassicControlsToggle" DockPanel.Dock="Right"
+                                      HorizontalAlignment="Right"
+                                      Style="{StaticResource MaterialDesignSwitchToggleButton}" />
+                    </DockPanel>
+                    <TextBlock FontSize="11" Opacity="0.7" Margin="0,4,0,0" TextWrapping="Wrap"
+                               Text="預設關閉：只保留 Fast Dev（上方啟動鈕、套用最新 code、熱重載）。打開才顯示傳統啟動/重啟/完整重建等舊操作與對應右鍵。" />
+                </StackPanel>
+
                 <!-- Docker 執行模式 -->
                 <StackPanel Margin="0,0,0,16">
                     <TextBlock Text="Docker 執行模式" Style="{StaticResource MaterialDesignSubtitle1TextBlock}" Margin="0,0,0,8" />
@@ -81,27 +95,6 @@
                                        Text="[wsl2]&#x0a;processors=8&#x0a;memory=12GB" />
                         </StackPanel>
                     </Border>
-                </StackPanel>
-
-                <!-- Auto Watch & Rebuild -->
-                <StackPanel Margin="0,0,0,16">
-                    <DockPanel>
-                        <TextBlock Text="Auto Watch &amp; Rebuild（檔案變動自動重建）"
-                                   VerticalAlignment="Center" DockPanel.Dock="Left" />
-                        <ToggleButton x:Name="AutoWatchToggle" DockPanel.Dock="Right"
-                                      HorizontalAlignment="Right"
-                                      Style="{StaticResource MaterialDesignSwitchToggleButton}" />
-                    </DockPanel>
-                    <DockPanel Margin="0,8,0,0">
-                        <TextBlock DockPanel.Dock="Left" Text="Debounce 延遲："
-                                   VerticalAlignment="Center" Margin="0,0,8,0" />
-                        <TextBlock DockPanel.Dock="Right"
-                                   Text="{Binding ElementName=WatchDebounceSlider, Path=Value, StringFormat={}{0:0} 秒}"
-                                   VerticalAlignment="Center" Margin="12,0,0,0" Width="44" />
-                        <Slider x:Name="WatchDebounceSlider" Minimum="1" Maximum="10"
-                                TickFrequency="1" IsSnapToTickEnabled="True"
-                                Style="{StaticResource MaterialDesignDiscreteSlider}" />
-                    </DockPanel>
                 </StackPanel>
 
                 <!-- BuildKit 建置平行度 -->

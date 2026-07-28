@@ -150,6 +150,10 @@
                          DockPanel.Dock="Left" Visibility="Collapsed"
                          VerticalAlignment="Center" Margin="0,0,12,0" />
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="ReleasePort80Btn" Content="釋放 Port 80"
+                        Style="{StaticResource MaterialDesignOutlinedButton}"
+                        ToolTip="砍掉佔用 host port 80 的非-docker 進程（如 wslrelay），解除與 nginx 的衝突"
+                        Margin="0,0,8,0" Click="ReleasePort80_Click" />
                 <Button x:Name="RepairBtn" Content="開始修復"
                         Style="{StaticResource MaterialDesignRaisedButton}"
                         Background="#FF9800" Foreground="White"
