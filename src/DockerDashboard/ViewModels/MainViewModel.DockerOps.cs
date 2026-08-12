@@ -538,10 +538,10 @@ public partial class MainViewModel
         }
 
         _fastDevReload.ClearAll();
+        // 先刷新容器狀態再還原旗標：新掃出的服務狀態是 Unknown，先還原會把在跑的 Fast Dev 旗標誤清
+        var statusConfirmed = await _monitor.ForceRefreshAsync();
         var settings = await _settingsService.LoadAsync();
-        RestoreFastDevStateFromSettings(settings);
-
-        await _monitor.ForceRefreshAsync();
+        RestoreFastDevStateFromSettings(settings, statusConfirmed);
         StatusMessage = "重新掃描完成";
     }
 

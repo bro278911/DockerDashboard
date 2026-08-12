@@ -206,10 +206,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
 
         _monitor.Start(TimeSpan.FromSeconds(settings.PollIntervalSeconds));
-        await _monitor.ForceRefreshAsync();
+        var statusConfirmed = await _monitor.ForceRefreshAsync();
 
         ApplySettings(settings);
-        RestoreFastDevStateFromSettings(settings);
+        RestoreFastDevStateFromSettings(settings, statusConfirmed);
 
         StatusMessage = IsDockerAvailable ? "就緒" : "⚠ Docker 未連線（顯示快取清單，連線恢復後自動更新）";
 
@@ -251,10 +251,22 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ShowClassicControls = settings.ClassicControlsEnabled;
     }
 
-    internal void RestoreFastDevStateFromSettings(AppSettings settings)
+    internal void RestoreFastDevStateFromSettings(AppSettings settings, bool statusConfirmed)
     {
+        // 殘留旗標會讓啟動鈕把服務誤判為「已在 Fast Dev」而整個跳過啟動，故只還原沒被確認停掉的服務。
+        // statusConfirmed=false（docker 沒連上、refresh 被 suspend）時分不出「沒在跑」與「不知道」，
+        // 照舊全還原 — 寧可留殘留旗標，也不把在跑的 Fast Dev 誤清（誤清連熱重載 watcher 都會一起消失）
+        var staleCount = 0;
         foreach (var service in Projects.SelectMany(p => p.ComposeFiles).SelectMany(c => c.Services))
-            service.IsFastDev = settings.FastDevEnabledServiceKeys.Contains(service.WatchKey);
+        {
+            var persisted = settings.FastDevEnabledServiceKeys.Contains(service.WatchKey);
+            var confirmedDown = statusConfirmed &&
+                service.Status is ContainerStatus.Stopped or ContainerStatus.Exited or ContainerStatus.Dead;
+            service.IsFastDev = persisted && !confirmedDown;
+            if (persisted && confirmedDown) staleCount++;
+        }
+        if (staleCount > 0)
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] 🧹 清除 {staleCount} 個殘留 Fast Dev 標記（容器未在執行）");
 
         foreach (var dir in Projects.SelectMany(p => p.ComposeFiles).SelectMany(c => c.Services)
                      .Where(s => s.IsFastDev)

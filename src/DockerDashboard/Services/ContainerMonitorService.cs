@@ -208,24 +208,28 @@ public class ContainerMonitorService : IDisposable
             ContainerCrashed?.Invoke(name, status);
     }
 
-    public async Task ForceRefreshAsync()
+    // 回傳是否真的取得容器清單並發出 ContainersUpdated（suspend／docker 失敗 = false，
+    // 呼叫端據此判斷服務狀態可否信任，不可把「不知道」當「沒在跑」）
+    public async Task<bool> ForceRefreshAsync()
     {
         try
         {
             if (IsRefreshSuspended())
             {
                 Interlocked.Exchange(ref _pendingRefresh, 1);
-                return;
+                return false;
             }
 
             var containers = await _dockerCli.GetRunningContainersAsync();
-            if (containers == null) return;
+            if (containers == null) return false;
             DetectCrashes(containers);
             ContainersUpdated?.Invoke(containers);
+            return true;
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[ContainerMonitor] ForceRefreshAsync error: {ex.Message}");
+            return false;
         }
     }
 
