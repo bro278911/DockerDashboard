@@ -197,6 +197,13 @@ public class ComposeFileScanner
             {
                 var context = buildEl.TryGetProperty("context", out var ctxEl) ? ctxEl.GetString() : null;
                 var dockerfile = buildEl.TryGetProperty("dockerfile", out var dfEl) ? dfEl.GetString() : null;
+                if (DockerMode == DockerMode.Wsl2)
+                {
+                    if (!string.IsNullOrEmpty(context) && IsAbsolutePath(context))
+                        context = DockerCliService.ConvertToWindowsPath(context, WslDistroName);
+                    if (!string.IsNullOrEmpty(dockerfile) && IsAbsolutePath(dockerfile))
+                        dockerfile = DockerCliService.ConvertToWindowsPath(dockerfile, WslDistroName);
+                }
                 var baseDir = string.IsNullOrEmpty(context)
                     ? directory
                     : IsAbsolutePath(context)
@@ -206,9 +213,7 @@ public class ComposeFileScanner
                 var resolvedDockerfilePath = IsAbsolutePath(dockerfilePath)
                     ? dockerfilePath
                     : Path.GetFullPath(Path.Combine(baseDir, dockerfilePath));
-                dockerService.DockerfilePath = DockerMode == DockerMode.Wsl2
-                    ? DockerCliService.ConvertToWindowsPath(resolvedDockerfilePath, WslDistroName)
-                    : resolvedDockerfilePath;
+                dockerService.DockerfilePath = resolvedDockerfilePath;
             }
 
             if (service.Value.TryGetProperty("ports", out var portsEl) && portsEl.ValueKind == JsonValueKind.Array)
