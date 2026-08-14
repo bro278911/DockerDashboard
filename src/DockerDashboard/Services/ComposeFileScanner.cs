@@ -25,6 +25,9 @@ public class ComposeFileScanner
 
     private readonly ScanCacheService _cache;
 
+    // 掃描期間的警告輸出（由 MainViewModel 接到操作紀錄）
+    public Action<string>? Log { get; set; }
+
     public ComposeFileScanner(ScanCacheService cache) => _cache = cache;
 
     public async Task<List<ComposeFile>> ScanFolderAsync(string folderPath, bool useCache = true)
@@ -57,6 +60,10 @@ public class ComposeFileScanner
                 // 不寫快取，待 Docker CLI 可用時重新以 compose config 解析
                 if (cliParsed != null)
                     _cache.Store(directory, stamps, cliParsed);
+                else
+                    Log?.Invoke(
+                        $"⚠ {Path.GetFileName(directory)}：docker compose config 解析失敗（逾時或 Docker 不可用），" +
+                        "改用簡易 YAML 解析 — 無 build.dockerfile 資訊，Fast Dev 改以資料夾名比對專案");
                 return composeFile;
             }
             finally
