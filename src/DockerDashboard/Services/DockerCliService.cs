@@ -28,6 +28,9 @@ public class DockerCliService : IDockerCliService
     private static readonly Regex WslUncRegex = new(
         @"^[\\/]{2}wsl(\$|\.localhost)[\\/]([^\\/]+)([\\/].*)?$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex WslMountRegex = new(
+        @"^/mnt/([a-z])/((?:.*))$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static string ConvertToWslPath(string windowsPath)
     {
@@ -46,6 +49,27 @@ public class DockerCliService : IDockerCliService
         var drive = match.Groups[1].Value.ToLowerInvariant();
         var rest2 = match.Groups[2].Value.Replace('\\', '/');
         return $"/mnt/{drive}/{rest2}";
+    }
+
+    public static string ConvertToWindowsPath(string wslPath, string distroName)
+    {
+        if (string.IsNullOrEmpty(wslPath)) return wslPath;
+
+        var mountMatch = WslMountRegex.Match(wslPath);
+        if (mountMatch.Success)
+        {
+            var drive = mountMatch.Groups[1].Value.ToUpperInvariant();
+            var rest = mountMatch.Groups[2].Value.Replace('/', '\\');
+            return rest.Length == 0 ? $"{drive}:\\" : $"{drive}:\\{rest}";
+        }
+
+        if (!wslPath.StartsWith("/", StringComparison.Ordinal))
+            return wslPath;
+
+        var rest2 = wslPath.TrimStart('/').Replace('/', '\\');
+        return rest2.Length == 0
+            ? $@"\\wsl$\{distroName}\"
+            : $@"\\wsl$\{distroName}\{rest2}";
     }
 
     public static bool IsWslUncPath(string path) =>
