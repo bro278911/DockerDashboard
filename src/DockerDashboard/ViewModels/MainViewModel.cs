@@ -324,8 +324,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return "資料夾不存在";
 
         var project = await BuildProjectAsync(folderPath);
+        // 兩種情況都會是 0：真的沒有 compose 檔、或有但解析全失敗（後者掃描時已寫入操作紀錄）
         if (project.ComposeFiles.Count == 0)
-            return "此資料夾及其子目錄找不到 docker compose 檔";
+            return "此資料夾及其子目錄找不到可用的 docker compose 檔（沒有 compose 檔，或 compose 解析失敗，詳見操作紀錄）";
 
         Projects.Add(project);
         return null;

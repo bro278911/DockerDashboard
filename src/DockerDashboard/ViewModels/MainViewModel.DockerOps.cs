@@ -868,7 +868,7 @@ public partial class MainViewModel
         if (existing != null) return existing;
 
         string? chosen = null;
-        var runtimeImage = settings.DefaultRuntimeImage;
+        string? runtimeImage = null;
 
         if (!string.IsNullOrEmpty(service.DockerfilePath))
         {
@@ -880,6 +880,12 @@ public partial class MainViewModel
                 chosen = fromDockerfile.CsprojRelativePath;
                 runtimeImage = fromDockerfile.RuntimeImage;
             }
+            else
+            {
+                // Dockerfile 與 csproj 不同層（monorepo 常見）：專案改由名稱比對確定，
+                // 但 runtime image 仍以這個 Dockerfile 的 FROM 為準，退回預設會掛錯 aspnet 版本
+                runtimeImage = FastDevDetector.ReadRuntimeImage(service.DockerfilePath);
+            }
         }
 
         // Dockerfile 路線沒結果（無 build 資訊、或 Dockerfile 路徑失效）就退回「資料夾名 = 服務名」完全比對，
@@ -890,13 +896,16 @@ public partial class MainViewModel
 
         if (chosen == null)
         {
-            skipReason = !Directory.Exists(service.WorkingDirectory)
-                ? "資料夾不存在"
-                : string.IsNullOrEmpty(service.DockerfilePath)
-                    ? "compose 無 build.dockerfile，且找不到同名資料夾的 csproj"
-                    : $"Dockerfile 同目錄無 csproj（{service.DockerfilePath}），且找不到同名資料夾的 csproj";
+            skipReason = FastDevSkipReason(service);
             return null;
         }
+
+        var projectDir = Path.GetDirectoryName(
+            Path.Combine(service.WorkingDirectory, chosen.Replace('/', Path.DirectorySeparatorChar)));
+        runtimeImage ??= projectDir == null
+            ? null
+            : FastDevDetector.ReadRuntimeImage(Path.Combine(projectDir, "Dockerfile"));
+        runtimeImage ??= settings.DefaultRuntimeImage;
 
         var info = FastDevDetector.ReadProjectInfo(service.WorkingDirectory, chosen, "net10.0");
         return new FastDevConfig
@@ -908,6 +917,17 @@ public partial class MainViewModel
             AssemblyName = info.AssemblyName,
             SrcRoot = service.WorkingDirectory
         };
+    }
+
+    private static string FastDevSkipReason(DockerService service)
+    {
+        if (!Directory.Exists(service.WorkingDirectory))
+            return "資料夾不存在";
+        if (string.IsNullOrEmpty(service.DockerfilePath))
+            return "compose 無 build.dockerfile，且找不到同名資料夾的 csproj";
+        if (!File.Exists(service.DockerfilePath))
+            return $"Dockerfile 不存在（{service.DockerfilePath}），且找不到同名資料夾的 csproj";
+        return $"Dockerfile 同目錄無 csproj（{service.DockerfilePath}），且找不到同名資料夾的 csproj";
     }
 
     private static string HostDllPath(FastDevConfig config)

@@ -79,11 +79,16 @@ public static class FastDevDetector
             return null;
 
         var csprojRel = Path.GetRelativePath(workingDirectory, csproj).Replace('\\', '/');
-        var runtime = defaultRuntimeImage;
-        var match = AspnetFromRegex.Match(File.ReadAllText(dockerfileAbsPath));
-        if (match.Success) runtime = match.Groups[1].Value;
+        return new FastDevDockerfileInfo(csprojRel, ReadRuntimeImage(dockerfileAbsPath) ?? defaultRuntimeImage);
+    }
 
-        return new FastDevDockerfileInfo(csprojRel, runtime);
+    // 只取 Dockerfile 的 aspnet FROM（找不到回 null）：專案改由別的路線確定時，runtime image 仍該以 Dockerfile 為準
+    public static string? ReadRuntimeImage(string dockerfileAbsPath)
+    {
+        if (string.IsNullOrEmpty(dockerfileAbsPath) || !File.Exists(dockerfileAbsPath))
+            return null;
+        var match = AspnetFromRegex.Match(File.ReadAllText(dockerfileAbsPath));
+        return match.Success ? match.Groups[1].Value : null;
     }
 
     public static FastDevProjectInfo ReadProjectInfo(

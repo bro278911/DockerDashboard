@@ -60,10 +60,13 @@ public class ComposeFileScanner
                 // 不寫快取，待 Docker CLI 可用時重新以 compose config 解析
                 if (cliParsed != null)
                     _cache.Store(directory, stamps, cliParsed);
-                else
+                else if (composeFile != null)
                     Log?.Invoke(
                         $"⚠ {Path.GetFileName(directory)}：docker compose config 解析失敗（逾時或 Docker 不可用），" +
                         "改用簡易 YAML 解析 — 無 build.dockerfile 資訊，Fast Dev 改以資料夾名比對專案");
+                else
+                    Log?.Invoke(
+                        $"⚠ {Path.GetFileName(directory)}：docker compose config 與 YAML 解析都失敗，已略過此目錄");
                 return composeFile;
             }
             finally
