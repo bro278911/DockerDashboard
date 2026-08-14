@@ -197,18 +197,23 @@ public class ComposeFileScanner
             {
                 var context = buildEl.TryGetProperty("context", out var ctxEl) ? ctxEl.GetString() : null;
                 var dockerfile = buildEl.TryGetProperty("dockerfile", out var dfEl) ? dfEl.GetString() : null;
+                if (DockerMode == DockerMode.Wsl2)
+                {
+                    if (!string.IsNullOrEmpty(context) && IsAbsolutePath(context))
+                        context = DockerCliService.ConvertToWindowsPath(context, WslDistroName);
+                    if (!string.IsNullOrEmpty(dockerfile) && IsAbsolutePath(dockerfile))
+                        dockerfile = DockerCliService.ConvertToWindowsPath(dockerfile, WslDistroName);
+                }
                 var baseDir = string.IsNullOrEmpty(context)
                     ? directory
-                    : Path.IsPathRooted(context)
+                    : IsAbsolutePath(context)
                         ? context
                         : Path.GetFullPath(Path.Combine(directory, context));
                 var dockerfilePath = string.IsNullOrEmpty(dockerfile) ? "Dockerfile" : dockerfile;
-                var resolvedDockerfilePath = Path.IsPathRooted(dockerfilePath)
+                var resolvedDockerfilePath = IsAbsolutePath(dockerfilePath)
                     ? dockerfilePath
                     : Path.GetFullPath(Path.Combine(baseDir, dockerfilePath));
-                dockerService.DockerfilePath = DockerMode == DockerMode.Wsl2
-                    ? DockerCliService.ConvertToWindowsPath(resolvedDockerfilePath, WslDistroName)
-                    : resolvedDockerfilePath;
+                dockerService.DockerfilePath = resolvedDockerfilePath;
             }
 
             if (service.Value.TryGetProperty("ports", out var portsEl) && portsEl.ValueKind == JsonValueKind.Array)
@@ -325,6 +330,9 @@ public class ComposeFileScanner
         }
         return sb.ToString().TrimStart('_', '-');
     }
+
+    private static bool IsAbsolutePath(string path) =>
+        Path.IsPathRooted(path) || path.StartsWith('/');
 
     // 清理 compose 變數語法，例如 ${DOCKER_REGISTRY:-}nginx → nginx
     private static string CleanImageName(string raw)
