@@ -199,11 +199,11 @@ public class ComposeFileScanner
                 var dockerfile = buildEl.TryGetProperty("dockerfile", out var dfEl) ? dfEl.GetString() : null;
                 var baseDir = string.IsNullOrEmpty(context)
                     ? directory
-                    : Path.IsPathRooted(context)
+                    : IsAbsolutePath(context)
                         ? context
                         : Path.GetFullPath(Path.Combine(directory, context));
                 var dockerfilePath = string.IsNullOrEmpty(dockerfile) ? "Dockerfile" : dockerfile;
-                var resolvedDockerfilePath = Path.IsPathRooted(dockerfilePath)
+                var resolvedDockerfilePath = IsAbsolutePath(dockerfilePath)
                     ? dockerfilePath
                     : Path.GetFullPath(Path.Combine(baseDir, dockerfilePath));
                 dockerService.DockerfilePath = DockerMode == DockerMode.Wsl2
@@ -325,6 +325,9 @@ public class ComposeFileScanner
         }
         return sb.ToString().TrimStart('_', '-');
     }
+
+    private static bool IsAbsolutePath(string path) =>
+        Path.IsPathRooted(path) || path.StartsWith('/');
 
     // 清理 compose 變數語法，例如 ${DOCKER_REGISTRY:-}nginx → nginx
     private static string CleanImageName(string raw)
