@@ -26,16 +26,37 @@ public partial class MainViewModel
 
         if (dialog.ShowDialog() != true) return;
 
+        var rejected = new List<string>();
         foreach (var folder in dialog.FolderNames)
         {
             if (Projects.Any(p => p.FolderPath.Equals(folder, StringComparison.OrdinalIgnoreCase)))
                 continue;
 
-            await AddProjectFromFolderAsync(folder);
+            var error = await AddProjectFromFolderAsync(folder);
+            if (error != null)
+            {
+                rejected.Add($"{folder}\n（{error}）");
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ 未匯入 {folder}：{error}");
+                continue;
+            }
             RemoveRecentFolder(folder);
         }
 
         await SaveSettingsAsync();
+
+        if (rejected.Count > 0)
+        {
+            StatusMessage = $"⚠ {rejected.Count} 個資料夾未匯入";
+            System.Windows.MessageBox.Show(
+                "以下資料夾未匯入：\n\n" + string.Join("\n\n", rejected) +
+                "\n\n請選擇專案根目錄（含 docker-compose.yml 的那一層），" +
+                "不要在對話框中點進資料夾後才按「選擇資料夾」。",
+                "匯入失敗",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+            return;
+        }
+
         StatusMessage = $"已匯入 {Projects.Count} 個專案";
     }
 
@@ -45,7 +66,14 @@ public partial class MainViewModel
         if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder)) return;
         if (Projects.Any(p => p.FolderPath.Equals(folder, StringComparison.OrdinalIgnoreCase))) return;
 
-        await AddProjectFromFolderAsync(folder);
+        var error = await AddProjectFromFolderAsync(folder);
+        if (error != null)
+        {
+            StatusMessage = $"⚠ 未匯入 {Path.GetFileName(folder)}：{error}";
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ 未匯入 {folder}：{error}");
+            return;
+        }
+
         RemoveRecentFolder(folder);
         await SaveSettingsAsync();
         StatusMessage = $"已重新匯入 {Path.GetFileName(folder)}";
@@ -625,17 +653,16 @@ public partial class MainViewModel
         StatusMessage = "正在偵測專案（讀取 csproj）...";
         var resolved = await Task.Run(() =>
         {
-            // 只掃一次 csproj 共用（僅在有服務缺 build.dockerfile 時才需要），避免每個服務各掃全樹
-            var scannedCsproj = services.Any(s => string.IsNullOrEmpty(s.DockerfilePath))
-                ? FastDevDetector.EnumerateCsprojRelative(workingDirectory)
-                : null;
+            // 只掃一次 csproj 共用（且只在真的要走資料夾名比對時才掃），避免每個服務各掃全樹
+            var scannedCsproj = new Lazy<IReadOnlyList<string>>(
+                () => FastDevDetector.EnumerateCsprojRelative(workingDirectory));
             var list = new List<(DockerService Service, FastDevConfig Config)>();
             foreach (var service in services)
             {
-                var config = ResolveFastDevConfig(service, settings, scannedCsproj);
+                var config = ResolveFastDevConfig(service, settings, scannedCsproj, out var skipReason);
                 if (config == null)
                 {
-                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ℹ {service.Name} 非 .NET 專案，略過 Fast Dev（仍會照常啟動）");
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ℹ {service.Name} 略過 Fast Dev（{skipReason}），仍會照常啟動");
                     continue;
                 }
                 list.Add((service, config));
@@ -833,34 +860,52 @@ public partial class MainViewModel
         if (changedKeys.Count > 0) await _monitor.ForceRefreshAsync();
     }
 
-    private FastDevConfig? ResolveFastDevConfig(DockerService service, AppSettings settings, IReadOnlyList<string>? scannedCsproj)
+    private FastDevConfig? ResolveFastDevConfig(
+        DockerService service, AppSettings settings, Lazy<IReadOnlyList<string>> scannedCsproj, out string skipReason)
     {
+        skipReason = string.Empty;
         var existing = settings.FastDevConfigs.FirstOrDefault(c => c.ServiceKey == service.WatchKey);
         if (existing != null) return existing;
 
-        string chosen;
-        string runtimeImage;
+        string? chosen = null;
+        string? runtimeImage = null;
 
         if (!string.IsNullOrEmpty(service.DockerfilePath))
         {
-            // 有 build.dockerfile：照它確定專案（對齊 VS）。同目錄無 csproj = 非 .NET 服務（如 nginx）→ 跳過，不亂配
+            // 有 build.dockerfile：照它確定專案（對齊 VS）
             var fromDockerfile = FastDevDetector.FromDockerfile(
                 service.WorkingDirectory, service.DockerfilePath, settings.DefaultRuntimeImage);
-            if (fromDockerfile == null)
-                return null;
-            chosen = fromDockerfile.CsprojRelativePath;
-            runtimeImage = fromDockerfile.RuntimeImage;
+            if (fromDockerfile != null)
+            {
+                chosen = fromDockerfile.CsprojRelativePath;
+                runtimeImage = fromDockerfile.RuntimeImage;
+            }
+            else
+            {
+                // Dockerfile 與 csproj 不同層（monorepo 常見）：專案改由名稱比對確定，
+                // 但 runtime image 仍以這個 Dockerfile 的 FROM 為準，退回預設會掛錯 aspnet 版本
+                runtimeImage = FastDevDetector.ReadRuntimeImage(service.DockerfilePath);
+            }
         }
-        else
+
+        // Dockerfile 路線沒結果（無 build 資訊、或 Dockerfile 路徑失效）就退回「資料夾名 = 服務名」完全比對，
+        // 找不到才跳過（絕不亂挑別的專案）。不在 Dockerfile 路線失敗時直接放棄：整包服務同時被判非 .NET，
+        // 幾乎都是 Dockerfile 路線歪掉，不是真的沒有 .NET 專案
+        chosen ??= scannedCsproj.Value.FirstOrDefault(c =>
+            c.Split('/')[0].Equals(service.Name, StringComparison.OrdinalIgnoreCase));
+
+        if (chosen == null)
         {
-            // 無 Dockerfile 資訊：用預掃的 csproj 清單做「資料夾名 = 服務名」完全比對，找不到就跳過（絕不亂挑別的專案）
-            var exact = scannedCsproj?.FirstOrDefault(c =>
-                c.Split('/')[0].Equals(service.Name, StringComparison.OrdinalIgnoreCase));
-            if (exact == null)
-                return null;
-            chosen = exact;
-            runtimeImage = settings.DefaultRuntimeImage;
+            skipReason = FastDevSkipReason(service);
+            return null;
         }
+
+        var projectDir = Path.GetDirectoryName(
+            Path.Combine(service.WorkingDirectory, chosen.Replace('/', Path.DirectorySeparatorChar)));
+        runtimeImage ??= projectDir == null
+            ? null
+            : FastDevDetector.ReadRuntimeImage(Path.Combine(projectDir, "Dockerfile"));
+        runtimeImage ??= settings.DefaultRuntimeImage;
 
         var info = FastDevDetector.ReadProjectInfo(service.WorkingDirectory, chosen, "net10.0");
         return new FastDevConfig
@@ -872,6 +917,17 @@ public partial class MainViewModel
             AssemblyName = info.AssemblyName,
             SrcRoot = service.WorkingDirectory
         };
+    }
+
+    private static string FastDevSkipReason(DockerService service)
+    {
+        if (!Directory.Exists(service.WorkingDirectory))
+            return "資料夾不存在";
+        if (string.IsNullOrEmpty(service.DockerfilePath))
+            return "compose 無 build.dockerfile，且找不到同名資料夾的 csproj";
+        if (!File.Exists(service.DockerfilePath))
+            return $"Dockerfile 不存在（{service.DockerfilePath}），且找不到同名資料夾的 csproj";
+        return $"Dockerfile 同目錄無 csproj（{service.DockerfilePath}），且找不到同名資料夾的 csproj";
     }
 
     private static string HostDllPath(FastDevConfig config)

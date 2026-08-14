@@ -12,7 +12,8 @@ namespace DockerDashboard.Services;
 
 public sealed record CachedFileStamp(string Path, long MTimeUtcTicks);
 
-public sealed record CachedServiceDto(string Name, string Image, string ContainerName, string Ports);
+public sealed record CachedServiceDto(
+    string Name, string Image, string ContainerName, string Ports, string? DockerfilePath = null);
 
 public sealed record CachedDirectoryDto(
     List<CachedFileStamp> Files,
@@ -51,8 +52,9 @@ public sealed class ScanCacheService
         if (!_entries.TryGetValue(directory, out var entry))
             return null;
 
-        // 舊版快取缺 ProjectName，視為未命中以重掃補齊
-        if (entry.ProjectName == null)
+        // 舊版快取缺 ProjectName / DockerfilePath，視為未命中以重掃補齊
+        // （DockerfilePath 缺漏會讓 Fast Dev 只能靠資料夾名猜專案，runtime image 也退回預設）
+        if (entry.ProjectName == null || entry.Services.Any(s => s.DockerfilePath == null))
             return null;
 
         if (entry.Files.Count != currentStamps.Count)
@@ -82,6 +84,7 @@ public sealed class ScanCacheService
                 Image = svc.Image,
                 ContainerName = svc.ContainerName,
                 Ports = svc.Ports,
+                DockerfilePath = svc.DockerfilePath ?? string.Empty,
                 ComposeFilePath = entry.FilePath,
                 WorkingDirectory = directory
             });
@@ -96,7 +99,7 @@ public sealed class ScanCacheService
             composeFile.FileName,
             composeFile.FilePath,
             composeFile.Services
-                .Select(s => new CachedServiceDto(s.Name, s.Image, s.ContainerName, s.Ports))
+                .Select(s => new CachedServiceDto(s.Name, s.Image, s.ContainerName, s.Ports, s.DockerfilePath))
                 .ToList(),
             composeFile.ProjectName);
     }

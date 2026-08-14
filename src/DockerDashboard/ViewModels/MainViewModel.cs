@@ -133,6 +133,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _fastDevReload = fastDevReload;
         _updateService = updateService;
 
+        _scanner.Log = message => AppendLog($"[{DateTime.Now:HH:mm:ss}] {message}");
+
         _monitor.ContainersUpdated += OnContainersUpdated;
         _monitor.ContainerCrashed += OnContainerCrashed;
         _fastDevReload.OnSolutionChanged = OnFastDevSolutionChangedAsync;
@@ -313,13 +315,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return project;
     }
 
-    internal async Task AddProjectFromFolderAsync(string folderPath)
+    // 掃不到任何 compose 檔就不匯入，並回傳失敗原因：
+    // 資料夾選取對話框「點進資料夾後才按選擇」會回傳子資料夾、或不存在的重複路徑（…\X\X），
+    // 匯進來只會變成一個沒有服務的空專案，還會寫進設定，下次啟動才被 Directory.Exists 濾掉
+    internal async Task<string?> AddProjectFromFolderAsync(string folderPath)
     {
-        var project = await BuildProjectAsync(folderPath);
-        Projects.Add(project);
+        if (!System.IO.Directory.Exists(folderPath))
+            return "資料夾不存在";
 
+        var project = await BuildProjectAsync(folderPath);
+        // 兩種情況都會是 0：真的沒有 compose 檔、或有但解析全失敗（後者掃描時已寫入操作紀錄）
         if (project.ComposeFiles.Count == 0)
-            StatusMessage = $"⚠ {project.Name} 中未偵測到服務（docker compose config 可能失敗）";
+            return "此資料夾及其子目錄找不到可用的 docker compose 檔（沒有 compose 檔，或 compose 解析失敗，詳見操作紀錄）";
+
+        Projects.Add(project);
+        return null;
     }
 
     internal void RemoveRecentFolder(string folder)

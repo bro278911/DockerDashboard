@@ -23,6 +23,17 @@ public class WslPathTests
     }
 
     [Theory]
+    [InlineData("/mnt/d/projects/app", @"D:\projects\app")]
+    [InlineData("/mnt/c/projects/app", @"C:\projects\app")]
+    [InlineData("/home/user/app", @"\\wsl$\Ubuntu\home\user\app")]
+    [InlineData("/", @"\\wsl$\Ubuntu\")]
+    [InlineData("", "")]
+    public void ConvertToWindowsPath_轉換各種WSL路徑(string input, string expected)
+    {
+        Assert.Equal(expected, DockerCliService.ConvertToWindowsPath(input, "Ubuntu"));
+    }
+
+    [Theory]
     [InlineData(@"\\wsl$\Ubuntu\home\user\app", true)]
     [InlineData(@"\\wsl.localhost\Ubuntu\home\user\app", true)]
     [InlineData(@"\\WSL.LOCALHOST\Ubuntu\home", true)]

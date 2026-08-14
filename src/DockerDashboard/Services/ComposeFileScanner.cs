@@ -25,6 +25,9 @@ public class ComposeFileScanner
 
     private readonly ScanCacheService _cache;
 
+    // 掃描期間的警告輸出（由 MainViewModel 接到操作紀錄）
+    public Action<string>? Log { get; set; }
+
     public ComposeFileScanner(ScanCacheService cache) => _cache = cache;
 
     public async Task<List<ComposeFile>> ScanFolderAsync(string folderPath, bool useCache = true)
@@ -57,6 +60,13 @@ public class ComposeFileScanner
                 // 不寫快取，待 Docker CLI 可用時重新以 compose config 解析
                 if (cliParsed != null)
                     _cache.Store(directory, stamps, cliParsed);
+                else if (composeFile != null)
+                    Log?.Invoke(
+                        $"⚠ {Path.GetFileName(directory)}：docker compose config 解析失敗（可能逾時、Docker 不可用或 compose 設定錯誤），" +
+                        "改用簡易 YAML 解析 — 無 build.dockerfile 資訊，Fast Dev 改以資料夾名比對專案");
+                else
+                    Log?.Invoke(
+                        $"⚠ {Path.GetFileName(directory)}：docker compose config 與 YAML 解析都失敗，已略過此目錄");
                 return composeFile;
             }
             finally
@@ -187,13 +197,18 @@ public class ComposeFileScanner
             {
                 var context = buildEl.TryGetProperty("context", out var ctxEl) ? ctxEl.GetString() : null;
                 var dockerfile = buildEl.TryGetProperty("dockerfile", out var dfEl) ? dfEl.GetString() : null;
-                if (!string.IsNullOrEmpty(dockerfile))
-                {
-                    var baseDir = !string.IsNullOrEmpty(context) && Path.IsPathRooted(context) ? context : directory;
-                    dockerService.DockerfilePath = Path.IsPathRooted(dockerfile)
-                        ? dockerfile
-                        : Path.GetFullPath(Path.Combine(baseDir, dockerfile));
-                }
+                var baseDir = string.IsNullOrEmpty(context)
+                    ? directory
+                    : Path.IsPathRooted(context)
+                        ? context
+                        : Path.GetFullPath(Path.Combine(directory, context));
+                var dockerfilePath = string.IsNullOrEmpty(dockerfile) ? "Dockerfile" : dockerfile;
+                var resolvedDockerfilePath = Path.IsPathRooted(dockerfilePath)
+                    ? dockerfilePath
+                    : Path.GetFullPath(Path.Combine(baseDir, dockerfilePath));
+                dockerService.DockerfilePath = DockerMode == DockerMode.Wsl2
+                    ? DockerCliService.ConvertToWindowsPath(resolvedDockerfilePath, WslDistroName)
+                    : resolvedDockerfilePath;
             }
 
             if (service.Value.TryGetProperty("ports", out var portsEl) && portsEl.ValueKind == JsonValueKind.Array)
