@@ -87,8 +87,19 @@ public static class FastDevDetector
     {
         if (string.IsNullOrEmpty(dockerfileAbsPath) || !File.Exists(dockerfileAbsPath))
             return null;
-        var match = AspnetFromRegex.Match(File.ReadAllText(dockerfileAbsPath));
-        return match.Success ? match.Groups[1].Value : null;
+        try
+        {
+            var match = AspnetFromRegex.Match(File.ReadAllText(dockerfileAbsPath));
+            return match.Success ? match.Groups[1].Value : null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     public static FastDevProjectInfo ReadProjectInfo(

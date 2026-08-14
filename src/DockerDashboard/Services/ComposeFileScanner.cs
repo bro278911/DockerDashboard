@@ -62,7 +62,7 @@ public class ComposeFileScanner
                     _cache.Store(directory, stamps, cliParsed);
                 else if (composeFile != null)
                     Log?.Invoke(
-                        $"⚠ {Path.GetFileName(directory)}：docker compose config 解析失敗（逾時或 Docker 不可用），" +
+                        $"⚠ {Path.GetFileName(directory)}：docker compose config 解析失敗（可能逾時、Docker 不可用或 compose 設定錯誤），" +
                         "改用簡易 YAML 解析 — 無 build.dockerfile 資訊，Fast Dev 改以資料夾名比對專案");
                 else
                     Log?.Invoke(
