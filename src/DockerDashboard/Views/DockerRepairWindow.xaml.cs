@@ -181,12 +181,14 @@ public partial class DockerRepairWindow : Window
                 return;
             }
 
+            var killed = 0;
             foreach (var candidate in candidates)
             {
                 try
                 {
                     candidate.Process.Kill(entireProcessTree: true);
                     AppendLog($"  ✅ 已終止：{candidate.Name} (PID {candidate.Listener.Pid}, {candidate.Listener.Address})");
+                    killed++;
                 }
                 catch (Exception ex)
                 {
@@ -194,8 +196,9 @@ public partial class DockerRepairWindow : Window
                 }
             }
 
+            AppendLog($"共終止 {killed}/{candidates.Count} 個程序。");
             AppendLog(string.Empty);
-            AppendLog($"▶ 重新測試 Port {port} 的 HTTP 連線...");
+            AppendLog($"▶ 重新測試 Port {port} 的 HTTP 連線（僅測試 HTTP，不含 HTTPS）...");
             var urls = new[]
             {
                 $"http://127.0.0.1:{port}/",
