@@ -150,10 +150,17 @@
                          DockPanel.Dock="Left" Visibility="Collapsed"
                          VerticalAlignment="Center" Margin="0,0,12,0" />
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button x:Name="ReleasePort80Btn" Content="釋放 Port 80"
+                <ComboBox x:Name="PortBox" IsEditable="True" Text="80"
+                          Width="90" VerticalAlignment="Center" Margin="0,0,8,0"
+                          ToolTip="選擇或輸入要釋放的主機 Port">
+                    <ComboBoxItem Content="80" />
+                    <ComboBoxItem Content="3001" />
+                    <ComboBoxItem Content="3002" />
+                </ComboBox>
+                <Button x:Name="ReleasePortBtn" Content="釋放 Port"
                         Style="{StaticResource MaterialDesignOutlinedButton}"
-                        ToolTip="砍掉佔用 host port 80 的非-docker 進程（如 wslrelay），解除與 nginx 的衝突"
-                        Margin="0,0,8,0" Click="ReleasePort80_Click" />
+                        ToolTip="終止佔用所選主機 Port 的非 Docker 程序（例如殘留的 wslrelay），然後重新測試該 Port"
+                        Margin="0,0,8,0" Click="ReleasePort_Click" />
                 <Button x:Name="RepairBtn" Content="開始修復"
                         Style="{StaticResource MaterialDesignRaisedButton}"
                         Background="#FF9800" Foreground="White"
