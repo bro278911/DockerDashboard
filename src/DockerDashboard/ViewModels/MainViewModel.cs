@@ -496,6 +496,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return links.Distinct().ToList();
     }
 
+    // _operationCts 同時只能被一個操作持有，搶佔前先判斷是否已被佔用，避免後續操作把前一個還在用的 CTS Dispose 掉
+    private bool TryBeginOperation()
+    {
+        if (_operationCts != null)
+        {
+            StatusMessage = "⚠ 已有操作進行中，請稍候";
+            return false;
+        }
+        _operationCts = new CancellationTokenSource();
+        return true;
+    }
+
     [RelayCommand]
     private void CancelOperation()
     {

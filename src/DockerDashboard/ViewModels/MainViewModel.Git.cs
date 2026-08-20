@@ -12,6 +12,11 @@ public partial class MainViewModel
     private async Task SwitchBranchAsync(DockerProject? project)
     {
         if (project == null || !project.IsGitRepo) return;
+        if (IsOperating)
+        {
+            StatusMessage = "⚠ 已有操作進行中，請稍候";
+            return;
+        }
 
         if (project.IsDirty)
         {

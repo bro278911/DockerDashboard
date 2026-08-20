@@ -37,7 +37,9 @@ public static class PortListenerScanner
         using var process = Process.Start(new ProcessStartInfo
         {
             FileName = "netstat",
-            Arguments = "-ano -p TCP",
+            // 不加 -p TCP：該參數只回 IPv4 列，會漏掉只綁 IPv6 的服務（如 [::]:3001）；
+            // IPv6 列協定欄同樣顯示 TCP，Parse 的 tokens[0] 檢查天然排除 UDP
+            Arguments = "-ano",
             RedirectStandardOutput = true,
             UseShellExecute = false,
             CreateNoWindow = true

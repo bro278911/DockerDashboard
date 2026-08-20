@@ -253,6 +253,7 @@
                                             <MenuItem Header="Fast Dev All（整包熱重啟）"
                                                       Command="{Binding Data.ToggleProjectFastDevCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
+                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
                                                       ToolTip="整個專案進 host-build dev 模式：改 C# 約 5 秒生效、不重建 image（需 host 端 .NET SDK）">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="FlashOutline" />
@@ -295,6 +296,7 @@
                                             <MenuItem Header="啟動"
                                                       Command="{Binding Data.StartServiceCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
+                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
                                                       Visibility="{Binding Data.ShowClassicControls, Source={StaticResource Proxy}, Converter={StaticResource BoolToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Play" />
@@ -302,7 +304,8 @@
                                             </MenuItem>
                                             <MenuItem Header="停止"
                                                       Command="{Binding Data.StopServiceCommand, Source={StaticResource Proxy}}"
-                                                      CommandParameter="{Binding}">
+                                                      CommandParameter="{Binding}"
+                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Stop" />
                                                 </MenuItem.Icon>
@@ -319,6 +322,7 @@
                                             <MenuItem Header="套用最新 code（改了 C#）"
                                                       Command="{Binding Data.ApplyLatestCodeServiceCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
+                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
                                                       ToolTip="改了 C# 用這個：host build + 熱重載，約 5 秒；服務沒在 Fast Dev 會自動進入（需 .NET SDK）">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon>
@@ -339,6 +343,7 @@
                                             <MenuItem Header="完整重建（改了 Dockerfile/相依）"
                                                       Command="{Binding Data.RebuildRestartServiceCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
+                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
                                                       Visibility="{Binding Data.ShowClassicControls, Source={StaticResource Proxy}, Converter={StaticResource BoolToVisibilityConverter}}"
                                                       ToolTip="改了 Dockerfile 或 NuGet 相依才用：重新 build image（分鐘級）；服務在 Fast Dev 中會離開、換回正式 image">
                                                 <MenuItem.Icon>

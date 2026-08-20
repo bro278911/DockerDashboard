@@ -89,9 +89,8 @@ public partial class MainViewModel
         string failMessageFormat,
         int? maxParallel)
     {
-        var cts = new CancellationTokenSource();
-        _operationCts?.Dispose();
-        _operationCts = cts;
+        if (!TryBeginOperation()) return;
+        var cts = _operationCts!;
         var ct = cts.Token;
 
         IsOperating = true;
@@ -176,10 +175,12 @@ public partial class MainViewModel
         }
 
         // 選取範圍決定要起哪些：單一 service > 整個專案 > 全部
-        IEnumerable<DockerService> scope =
+        List<DockerService> scope =
             SelectedService != null ? [SelectedService]
             : SelectedProject != null ? ProjectServices(SelectedProject)
             : AllServices();
+
+        if (!await EnsureNoPortConflictAsync(scope)) return;
 
         foreach (var group in scope
                      .Where(s => !s.IsFastDev)
@@ -213,6 +214,7 @@ public partial class MainViewModel
     private async Task ProjectUpAsync(DockerProject? project)
     {
         if (project == null) return;
+        if (!await EnsureNoPortConflictAsync(ProjectServices(project))) return;
         if (!await ConfirmBatchOverridesFastDevAsync(ProjectServices(project))) return;
 
         await RunComposeBatchAsync(
@@ -247,10 +249,10 @@ public partial class MainViewModel
     private async Task StartServiceAsync(DockerService? service)
     {
         if (service == null) return;
+        if (!await EnsureNoPortConflictAsync([service])) return;
 
-        var cts = new CancellationTokenSource();
-        _operationCts?.Dispose();
-        _operationCts = cts;
+        if (!TryBeginOperation()) return;
+        var cts = _operationCts!;
         var ct = cts.Token;
 
         IsOperating = true;
@@ -303,9 +305,8 @@ public partial class MainViewModel
     {
         if (service == null) return;
 
-        var cts = new CancellationTokenSource();
-        _operationCts?.Dispose();
-        _operationCts = cts;
+        if (!TryBeginOperation()) return;
+        var cts = _operationCts!;
         var ct = cts.Token;
 
         IsOperating = true;
@@ -358,9 +359,8 @@ public partial class MainViewModel
     {
         if (service == null) return;
 
-        var cts = new CancellationTokenSource();
-        _operationCts?.Dispose();
-        _operationCts = cts;
+        if (!TryBeginOperation()) return;
+        var cts = _operationCts!;
         var ct = cts.Token;
 
         IsOperating = true;
@@ -421,9 +421,8 @@ public partial class MainViewModel
             return;
         }
 
-        var cts = new CancellationTokenSource();
-        _operationCts?.Dispose();
-        _operationCts = cts;
+        if (!TryBeginOperation()) return;
+        var cts = _operationCts!;
         var ct = cts.Token;
 
         IsOperating = true;
@@ -482,9 +481,8 @@ public partial class MainViewModel
             .ToList();
         if (runningComposes.Count > 0 && IsDockerAvailable)
         {
-            var cts = new CancellationTokenSource();
-            _operationCts?.Dispose();
-            _operationCts = cts;
+            if (!TryBeginOperation()) return;
+            var cts = _operationCts!;
             var ct = cts.Token;
 
             IsOperating = true;
@@ -634,6 +632,13 @@ public partial class MainViewModel
 
     private async Task EnableFastDevServicesAsync(string workingDirectory, IReadOnlyList<DockerService> services)
     {
+        if (_operationCts != null)
+        {
+            StatusMessage = "⚠ 已有操作進行中，請稍候";
+            return;
+        }
+        if (!await EnsureNoPortConflictAsync(services)) return;
+
         // 按下瞬間就給回饋（進度條 + 文字 + log），否則只有按鈕變灰、像沒反應
         IsOperating = true;
         StatusMessage = "⚡ 正在啟用 Fast Dev...";
@@ -713,6 +718,12 @@ public partial class MainViewModel
 
     private async Task DisableFastDevServicesAsync(IReadOnlyList<DockerService> services)
     {
+        if (_operationCts != null)
+        {
+            StatusMessage = "⚠ 已有操作進行中，請稍候";
+            return;
+        }
+
         var settings = await _settingsService.LoadAsync();
         foreach (var service in services)
         {
@@ -729,9 +740,8 @@ public partial class MainViewModel
     // 回傳是否完整套用成功（取消或任一步失敗 = false），供啟用端決定是否回滾
     private async Task<bool> ApplyFastDevForDirectoryAsync(string workingDirectory, AppSettings settings)
     {
-        var cts = new CancellationTokenSource();
-        _operationCts?.Dispose();
-        _operationCts = cts;
+        if (!TryBeginOperation()) return false;
+        var cts = _operationCts!;
         var ct = cts.Token;
         IsOperating = true;
         IsCancelling = false;
