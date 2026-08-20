@@ -496,10 +496,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return links.Distinct().ToList();
     }
 
-    // _operationCts 同時只能被一個操作持有，搶佔前先判斷是否已被佔用，避免後續操作把前一個還在用的 CTS Dispose 掉
+    // _operationCts 同時只能被一個操作持有，搶佔前先判斷是否已被佔用，避免後續操作把前一個還在用的 CTS Dispose 掉；
+    // 同時檢查 IsOperating：部分操作（Fast Dev 啟用偵測階段、git 切分支）只設旗標未建 CTS，忙碌語意須一致
     private bool TryBeginOperation()
     {
-        if (_operationCts != null)
+        if (_operationCts != null || IsOperating)
         {
             StatusMessage = "⚠ 已有操作進行中，請稍候";
             return false;

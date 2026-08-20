@@ -632,7 +632,7 @@ public partial class MainViewModel
 
     private async Task EnableFastDevServicesAsync(string workingDirectory, IReadOnlyList<DockerService> services)
     {
-        if (_operationCts != null)
+        if (_operationCts != null || IsOperating)
         {
             StatusMessage = "⚠ 已有操作進行中，請稍候";
             return;
@@ -691,6 +691,9 @@ public partial class MainViewModel
         }
 
         await _settingsService.SaveAsync(settings);
+        // Apply 內部會重新走 TryBeginOperation（現在連 IsOperating 一起查），先放掉旗標；
+        // 到 Apply 取鎖前是同一 UI 派發的同步接續，中間插不進其他操作
+        IsOperating = false;
         if (await ApplyFastDevForDirectoryAsync(workingDirectory, settings)) return;
 
         // build/up 失敗或取消：回滾，避免 UI 與持久化狀態指向不存在的 Fast Dev 容器
@@ -718,7 +721,7 @@ public partial class MainViewModel
 
     private async Task DisableFastDevServicesAsync(IReadOnlyList<DockerService> services)
     {
-        if (_operationCts != null)
+        if (_operationCts != null || IsOperating)
         {
             StatusMessage = "⚠ 已有操作進行中，請稍候";
             return;

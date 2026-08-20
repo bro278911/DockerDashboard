@@ -31,8 +31,22 @@ public partial class MainViewModel
 
             // compose 格式："hostPort:target" 或 "ip:hostPort:target"（target 可帶 /proto），host port 在倒數第二段
             var parts = token.Split(':');
-            if (parts.Length >= 2 && int.TryParse(parts[^2], out var hostPort))
-                yield return hostPort;
+            if (parts.Length < 2) continue;
+
+            var host = parts[^2];
+            var dashIdx = host.IndexOf('-');
+            if (dashIdx < 0)
+            {
+                if (int.TryParse(host, out var hostPort))
+                    yield return hostPort;
+                continue;
+            }
+
+            // host 可為區間（"3001-3005:80"），逐一展開；上限防呆避免打錯字造成無界展開
+            if (int.TryParse(host[..dashIdx], out var from) && int.TryParse(host[(dashIdx + 1)..], out var to)
+                && to >= from && to - from <= 256)
+                for (var p = from; p <= to; p++)
+                    yield return p;
         }
     }
 
