@@ -12,7 +12,7 @@ public partial class MainViewModel
     private async Task SwitchBranchAsync(DockerProject? project)
     {
         if (project == null || !project.IsGitRepo) return;
-        if (IsOperating || _operationCts != null)
+        if (IsBusy)
         {
             StatusMessage = "⚠ 已有操作進行中，請稍候";
             return;
@@ -29,23 +29,24 @@ public partial class MainViewModel
             if (confirm != System.Windows.MessageBoxResult.Yes) return;
         }
 
-        var localBranches = await _gitService.GetLocalBranchesAsync(project.FolderPath);
-        var remoteBranches = await _gitService.GetRemoteBranchesAsync(project.FolderPath);
-
-        var selector = new Views.BranchSelectorWindow(
-            project.Name, project.CurrentBranch, localBranches, remoteBranches);
-        selector.Owner = Application.Current.MainWindow;
-
-        if (selector.ShowDialog() != true || string.IsNullOrEmpty(selector.SelectedBranch))
-            return;
-
+        // 抓分支清單就開始 await，先佔住旗標，避免這段期間其他操作插隊並行
         IsOperating = true;
-        var targetBranch = selector.SelectedBranch;
-        StatusMessage = $"正在切換 {project.Name} 到分支 {targetBranch}...";
-        AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔀 切換 {project.Name} → {targetBranch}");
-
         try
         {
+            var localBranches = await _gitService.GetLocalBranchesAsync(project.FolderPath);
+            var remoteBranches = await _gitService.GetRemoteBranchesAsync(project.FolderPath);
+
+            var selector = new Views.BranchSelectorWindow(
+                project.Name, project.CurrentBranch, localBranches, remoteBranches);
+            selector.Owner = Application.Current.MainWindow;
+
+            if (selector.ShowDialog() != true || string.IsNullOrEmpty(selector.SelectedBranch))
+                return;
+
+            var targetBranch = selector.SelectedBranch;
+            StatusMessage = $"正在切換 {project.Name} 到分支 {targetBranch}...";
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔀 切換 {project.Name} → {targetBranch}");
+
             var (success, output) = await _gitService.CheckoutAsync(project.FolderPath, targetBranch);
 
             if (success)

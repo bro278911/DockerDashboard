@@ -42,9 +42,9 @@ public partial class MainViewModel
                 continue;
             }
 
-            // host 可為區間（"3001-3005:80"），逐一展開；上限防呆避免打錯字造成無界展開
+            // host 可為區間（"3001-3005:80"），逐一展開；限制在合法 port 範圍內，天然有界、也免去 int 溢位
             if (int.TryParse(host[..dashIdx], out var from) && int.TryParse(host[(dashIdx + 1)..], out var to)
-                && to >= from && to - from <= 256)
+                && from >= 1 && to <= 65535 && to >= from)
                 for (var p = from; p <= to; p++)
                     yield return p;
         }
