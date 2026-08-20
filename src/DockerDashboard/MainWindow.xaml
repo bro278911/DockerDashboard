@@ -313,6 +313,7 @@
                                             <MenuItem Header="重啟（快速）"
                                                       Command="{Binding Data.RestartServiceCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
+                                                      IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
                                                       Visibility="{Binding Data.ShowClassicControls, Source={StaticResource Proxy}, Converter={StaticResource BoolToVisibilityConverter}}"
                                                       ToolTip="只重啟 process，不重建 image">
                                                 <MenuItem.Icon>
