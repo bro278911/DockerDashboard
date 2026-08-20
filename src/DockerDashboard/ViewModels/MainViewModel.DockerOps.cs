@@ -89,9 +89,8 @@ public partial class MainViewModel
         string failMessageFormat,
         int? maxParallel)
     {
-        var cts = new CancellationTokenSource();
-        _operationCts?.Dispose();
-        _operationCts = cts;
+        if (!TryBeginOperation()) return;
+        var cts = _operationCts!;
         var ct = cts.Token;
 
         IsOperating = true;
@@ -176,10 +175,12 @@ public partial class MainViewModel
         }
 
         // 選取範圍決定要起哪些：單一 service > 整個專案 > 全部
-        IEnumerable<DockerService> scope =
+        List<DockerService> scope =
             SelectedService != null ? [SelectedService]
             : SelectedProject != null ? ProjectServices(SelectedProject)
             : AllServices();
+
+        if (!await EnsureNoPortConflictAsync(scope)) return;
 
         foreach (var group in scope
                      .Where(s => !s.IsFastDev)
@@ -213,6 +214,7 @@ public partial class MainViewModel
     private async Task ProjectUpAsync(DockerProject? project)
     {
         if (project == null) return;
+        if (!await EnsureNoPortConflictAsync(ProjectServices(project))) return;
         if (!await ConfirmBatchOverridesFastDevAsync(ProjectServices(project))) return;
 
         await RunComposeBatchAsync(
@@ -247,10 +249,10 @@ public partial class MainViewModel
     private async Task StartServiceAsync(DockerService? service)
     {
         if (service == null) return;
+        if (!await EnsureNoPortConflictAsync([service])) return;
 
-        var cts = new CancellationTokenSource();
-        _operationCts?.Dispose();
-        _operationCts = cts;
+        if (!TryBeginOperation()) return;
+        var cts = _operationCts!;
         var ct = cts.Token;
 
         IsOperating = true;
@@ -303,9 +305,8 @@ public partial class MainViewModel
     {
         if (service == null) return;
 
-        var cts = new CancellationTokenSource();
-        _operationCts?.Dispose();
-        _operationCts = cts;
+        if (!TryBeginOperation()) return;
+        var cts = _operationCts!;
         var ct = cts.Token;
 
         IsOperating = true;
@@ -358,9 +359,8 @@ public partial class MainViewModel
     {
         if (service == null) return;
 
-        var cts = new CancellationTokenSource();
-        _operationCts?.Dispose();
-        _operationCts = cts;
+        if (!TryBeginOperation()) return;
+        var cts = _operationCts!;
         var ct = cts.Token;
 
         IsOperating = true;
@@ -421,9 +421,8 @@ public partial class MainViewModel
             return;
         }
 
-        var cts = new CancellationTokenSource();
-        _operationCts?.Dispose();
-        _operationCts = cts;
+        if (!TryBeginOperation()) return;
+        var cts = _operationCts!;
         var ct = cts.Token;
 
         IsOperating = true;
@@ -482,9 +481,8 @@ public partial class MainViewModel
             .ToList();
         if (runningComposes.Count > 0 && IsDockerAvailable)
         {
-            var cts = new CancellationTokenSource();
-            _operationCts?.Dispose();
-            _operationCts = cts;
+            if (!TryBeginOperation()) return;
+            var cts = _operationCts!;
             var ct = cts.Token;
 
             IsOperating = true;
@@ -634,58 +632,74 @@ public partial class MainViewModel
 
     private async Task EnableFastDevServicesAsync(string workingDirectory, IReadOnlyList<DockerService> services)
     {
+        if (IsBusy)
+        {
+            StatusMessage = "⚠ 已有操作進行中，請稍候";
+            return;
+        }
+        if (!await EnsureNoPortConflictAsync(services)) return;
+
         // 按下瞬間就給回饋（進度條 + 文字 + log），否則只有按鈕變灰、像沒反應
         IsOperating = true;
         StatusMessage = "⚡ 正在啟用 Fast Dev...";
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚡ 啟用 Fast Dev（{services.Count} 個服務）...");
 
-        if (!await IsDotnetSdkAvailableAsync())
-        {
-            IsOperating = false;
-            StatusMessage = "⚠ 找不到 host 端 dotnet SDK";
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ 找不到 host 端 dotnet SDK，無法啟用 Fast Dev");
-            return;
-        }
-
-        var settings = await _settingsService.LoadAsync();
-
-        // 偵測含目錄掃描與讀檔，移出 UI 執行緒，否則按鈕按下會卡住數十秒像當機
-        StatusMessage = "正在偵測專案（讀取 csproj）...";
-        var resolved = await Task.Run(() =>
-        {
-            // 只掃一次 csproj 共用（且只在真的要走資料夾名比對時才掃），避免每個服務各掃全樹
-            var scannedCsproj = new Lazy<IReadOnlyList<string>>(
-                () => FastDevDetector.EnumerateCsprojRelative(workingDirectory));
-            var list = new List<(DockerService Service, FastDevConfig Config)>();
-            foreach (var service in services)
-            {
-                var config = ResolveFastDevConfig(service, settings, scannedCsproj, out var skipReason);
-                if (config == null)
-                {
-                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ℹ {service.Name} 略過 Fast Dev（{skipReason}），仍會照常啟動");
-                    continue;
-                }
-                list.Add((service, config));
-            }
-            return list;
-        });
-
-        if (resolved.Count == 0)
-        {
-            IsOperating = false;
-            StatusMessage = "⚠ 此專案沒有可啟用 Fast Dev 的 .NET 服務";
-            return;
-        }
-
+        AppSettings settings;
         var enabled = new List<DockerService>();
-        foreach (var (service, config) in resolved)
+        try
         {
-            service.IsFastDev = true;
-            PersistFastDev(settings, service.WatchKey, config, enabled: true);
-            enabled.Add(service);
+            if (!await IsDotnetSdkAvailableAsync())
+            {
+                StatusMessage = "⚠ 找不到 host 端 dotnet SDK";
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ 找不到 host 端 dotnet SDK，無法啟用 Fast Dev");
+                return;
+            }
+
+            settings = await _settingsService.LoadAsync();
+
+            // 偵測含目錄掃描與讀檔，移出 UI 執行緒，否則按鈕按下會卡住數十秒像當機
+            StatusMessage = "正在偵測專案（讀取 csproj）...";
+            var resolved = await Task.Run(() =>
+            {
+                // 只掃一次 csproj 共用（且只在真的要走資料夾名比對時才掃），避免每個服務各掃全樹
+                var scannedCsproj = new Lazy<IReadOnlyList<string>>(
+                    () => FastDevDetector.EnumerateCsprojRelative(workingDirectory));
+                var list = new List<(DockerService Service, FastDevConfig Config)>();
+                foreach (var service in services)
+                {
+                    var config = ResolveFastDevConfig(service, settings, scannedCsproj, out var skipReason);
+                    if (config == null)
+                    {
+                        AppendLog($"[{DateTime.Now:HH:mm:ss}] ℹ {service.Name} 略過 Fast Dev（{skipReason}），仍會照常啟動");
+                        continue;
+                    }
+                    list.Add((service, config));
+                }
+                return list;
+            });
+
+            if (resolved.Count == 0)
+            {
+                StatusMessage = "⚠ 此專案沒有可啟用 Fast Dev 的 .NET 服務";
+                return;
+            }
+
+            foreach (var (service, config) in resolved)
+            {
+                service.IsFastDev = true;
+                PersistFastDev(settings, service.WatchKey, config, enabled: true);
+                enabled.Add(service);
+            }
+
+            await _settingsService.SaveAsync(settings);
+        }
+        finally
+        {
+            // 任何路徑（含例外）都要放掉旗標，否則 IsBusy 永遠為真、所有操作全域卡死
+            IsOperating = false;
         }
 
-        await _settingsService.SaveAsync(settings);
+        // Apply 內部會重新走 TryBeginOperation；到取鎖前是同一 UI 派發的同步接續，中間插不進其他操作
         if (await ApplyFastDevForDirectoryAsync(workingDirectory, settings)) return;
 
         // build/up 失敗或取消：回滾，避免 UI 與持久化狀態指向不存在的 Fast Dev 容器
@@ -713,13 +727,29 @@ public partial class MainViewModel
 
     private async Task DisableFastDevServicesAsync(IReadOnlyList<DockerService> services)
     {
-        var settings = await _settingsService.LoadAsync();
-        foreach (var service in services)
+        if (IsBusy)
         {
-            service.IsFastDev = false;
-            PersistFastDev(settings, service.WatchKey, null, enabled: false);
+            StatusMessage = "⚠ 已有操作進行中，請稍候";
+            return;
         }
-        await _settingsService.SaveAsync(settings);
+
+        // 讀寫設定期間佔住旗標，避免其他操作在持久化半途插入
+        IsOperating = true;
+        AppSettings settings;
+        try
+        {
+            settings = await _settingsService.LoadAsync();
+            foreach (var service in services)
+            {
+                service.IsFastDev = false;
+                PersistFastDev(settings, service.WatchKey, null, enabled: false);
+            }
+            await _settingsService.SaveAsync(settings);
+        }
+        finally
+        {
+            IsOperating = false;
+        }
 
         foreach (var dir in services.Select(s => s.WorkingDirectory).Distinct(StringComparer.OrdinalIgnoreCase))
             await ApplyFastDevForDirectoryAsync(dir, settings);
@@ -729,9 +759,8 @@ public partial class MainViewModel
     // 回傳是否完整套用成功（取消或任一步失敗 = false），供啟用端決定是否回滾
     private async Task<bool> ApplyFastDevForDirectoryAsync(string workingDirectory, AppSettings settings)
     {
-        var cts = new CancellationTokenSource();
-        _operationCts?.Dispose();
-        _operationCts = cts;
+        if (!TryBeginOperation()) return false;
+        var cts = _operationCts!;
         var ct = cts.Token;
         IsOperating = true;
         IsCancelling = false;
