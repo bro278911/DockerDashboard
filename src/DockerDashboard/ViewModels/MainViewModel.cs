@@ -27,6 +27,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly HostBuildService _hostBuild;
     private readonly FastDevReloadService _fastDevReload;
     private readonly UpdateService _updateService;
+    private readonly NodeProcessService _nodeService;
     private Forms.NotifyIcon? _notifyIcon;
     private readonly ConcurrentQueue<string> _pendingLogQueue = new();
     private int _isLogFlushScheduled;
@@ -122,7 +123,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ContainerMonitorService monitor,
         HostBuildService hostBuild,
         FastDevReloadService fastDevReload,
-        UpdateService updateService)
+        UpdateService updateService,
+        NodeProcessService nodeService)
     {
         _dockerCli = dockerCli;
         _gitService = gitService;
@@ -132,6 +134,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _hostBuild = hostBuild;
         _fastDevReload = fastDevReload;
         _updateService = updateService;
+        _nodeService = nodeService;
 
         _scanner.Log = message => AppendLog($"[{DateTime.Now:HH:mm:ss}] {message}");
 
@@ -525,6 +528,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _operationCts?.Cancel();
         _operationCts?.Dispose();
         StopLogStream();
+        StopAllFrontendProcesses();
         _monitor.ContainersUpdated -= OnContainersUpdated;
         _monitor.ContainerCrashed -= OnContainerCrashed;
         _monitor.Dispose();
