@@ -33,6 +33,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<HostBuildService>();
         services.AddSingleton<FastDevReloadService>();
         services.AddSingleton<NodeProcessService>();
+        services.AddSingleton<FrontendProcessManager>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
     }

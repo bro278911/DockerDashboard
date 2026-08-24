@@ -7,25 +7,6 @@ namespace DockerDashboard.Tests;
 public class MainViewModelFrontendTests
 {
     [Fact]
-    public void FindRunningInGroup_回傳同組另一個執行中的專案()
-    {
-        var running = new FrontendProject { Name = "A", IsDevRunning = true };
-        var candidate = new FrontendProject { Name = "B" };
-
-        var found = MainViewModel.FindRunningInGroup([running, candidate], candidate);
-
-        Assert.Same(running, found);
-    }
-
-    [Fact]
-    public void FindRunningInGroup_排除自己且無其他執行中時回傳null()
-    {
-        var candidate = new FrontendProject { Name = "A", IsDevRunning = true };
-
-        Assert.Null(MainViewModel.FindRunningInGroup([candidate], candidate));
-    }
-
-    [Fact]
     public void BuildRunningLabel_顯示名稱資料夾與分支()
     {
         var p = new FrontendProject

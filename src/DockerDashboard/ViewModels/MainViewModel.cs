@@ -28,6 +28,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly FastDevReloadService _fastDevReload;
     private readonly UpdateService _updateService;
     private readonly NodeProcessService _nodeService;
+    private readonly FrontendProcessManager _frontendProcesses;
     private Forms.NotifyIcon? _notifyIcon;
     private readonly ConcurrentQueue<string> _pendingLogQueue = new();
     private int _isLogFlushScheduled;
@@ -128,7 +129,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         HostBuildService hostBuild,
         FastDevReloadService fastDevReload,
         UpdateService updateService,
-        NodeProcessService nodeService)
+        NodeProcessService nodeService,
+        FrontendProcessManager frontendProcesses)
     {
         _dockerCli = dockerCli;
         _gitService = gitService;
@@ -139,12 +141,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _fastDevReload = fastDevReload;
         _updateService = updateService;
         _nodeService = nodeService;
+        _frontendProcesses = frontendProcesses;
 
         _scanner.Log = message => AppendLog($"[{DateTime.Now:HH:mm:ss}] {message}");
 
         _monitor.ContainersUpdated += OnContainersUpdated;
         _monitor.ContainerCrashed += OnContainerCrashed;
         _fastDevReload.OnSolutionChanged = OnFastDevSolutionChangedAsync;
+        _frontendProcesses.OutputReceived += OnFrontendOutput;
+        _frontendProcesses.StateChanged += OnFrontendStateChanged;
 
         LogView = CollectionViewSource.GetDefaultView(LogLines);
         LogView.Filter = LogFilterPredicate;
@@ -579,7 +584,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _operationCts?.Cancel();
         _operationCts?.Dispose();
         StopLogStream();
-        StopAllFrontendProcesses();
+        _frontendProcesses.OutputReceived -= OnFrontendOutput;
+        _frontendProcesses.StateChanged -= OnFrontendStateChanged;
+        _frontendProcesses.StopAll();
         _monitor.ContainersUpdated -= OnContainersUpdated;
         _monitor.ContainerCrashed -= OnContainerCrashed;
         _monitor.Dispose();
