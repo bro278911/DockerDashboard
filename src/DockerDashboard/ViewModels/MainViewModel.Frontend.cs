@@ -16,8 +16,8 @@ public partial class MainViewModel
 {
     public ObservableCollection<FrontendProject> InternalProjects { get; } = [];
     public ObservableCollection<FrontendProject> ExternalProjects { get; } = [];
-    public FrontendLogBuffer InternalLog { get; } = new();
-    public FrontendLogBuffer ExternalLog { get; } = new();
+    public LogBuffer InternalLog { get; } = new();
+    public LogBuffer ExternalLog { get; } = new();
 
     [ObservableProperty]
     private string _internalRunningLabel = "無執行中專案";
@@ -55,7 +55,7 @@ public partial class MainViewModel
 
     // 兩組 log 面板共用：CommandParameter 綁對應的 InternalLog/ExternalLog，不必各自複製一份指令
     [RelayCommand]
-    private async Task ExportFrontendLogAsync(FrontendLogBuffer? log)
+    private async Task ExportFrontendLogAsync(LogBuffer? log)
     {
         if (log == null) return;
 
@@ -82,14 +82,14 @@ public partial class MainViewModel
     }
 
     [RelayCommand]
-    private void CopyAllFrontendLog(FrontendLogBuffer? log)
+    private void CopyAllFrontendLog(LogBuffer? log)
     {
         if (log == null || log.Lines.Count == 0) return;
         System.Windows.Clipboard.SetText(string.Join(Environment.NewLine, log.Lines));
         StatusMessage = $"已複製全部 {log.Lines.Count} 行日誌";
     }
 
-    // manager 在背景執行緒觸發此事件；FrontendLogBuffer.Append 內部已用 ConcurrentQueue +
+    // manager 在背景執行緒觸發此事件；LogBuffer.Append 內部已用 ConcurrentQueue +
     // Dispatcher 排程收斂寫入，故此處不必再包一層 InvokeAsync
     private void OnFrontendOutput(object? sender, FrontendOutputEventArgs e)
         => AppendFrontendLog(e.Project, $"[{e.Project.Name}] {e.Line}");

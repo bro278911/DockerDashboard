@@ -2,12 +2,12 @@ using DockerDashboard.ViewModels;
 
 namespace DockerDashboard.Tests;
 
-public class FrontendLogBufferTests
+public class LogBufferTests
 {
     [Fact]
     public void AppendLine_超過5000行_保留後4500行()
     {
-        var buffer = new FrontendLogBuffer();
+        var buffer = new LogBuffer();
         for (var i = 0; i < 5001; i++)
             buffer.AppendLine($"line-{i}");
 
@@ -23,7 +23,7 @@ public class FrontendLogBufferTests
     [InlineData("anything", "   ", true)]
     public void MatchesFilter_不分大小寫關鍵字(string line, string filter, bool expected)
     {
-        Assert.Equal(expected, FrontendLogBuffer.MatchesFilter(line, filter));
+        Assert.Equal(expected, LogBuffer.MatchesFilter(line, filter));
     }
 
     // 回歸測試：測試環境（xunit host）沒有 WPF Application，Application.Current 為 null。
@@ -33,7 +33,7 @@ public class FrontendLogBufferTests
     [Fact]
     public void Append_無WPFApplication時不拋例外且不同步寫入()
     {
-        var buffer = new FrontendLogBuffer();
+        var buffer = new LogBuffer();
 
         var ex = Record.Exception(() => buffer.Append("test line"));
 
@@ -46,7 +46,7 @@ public class FrontendLogBufferTests
     [Fact]
     public void Append_無WPFApplication時待處理佇列不會累積()
     {
-        var buffer = new FrontendLogBuffer();
+        var buffer = new LogBuffer();
 
         for (var i = 0; i < 1000; i++)
             buffer.Append($"line-{i}");

@@ -10,7 +10,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace DockerDashboard.ViewModels;
 
 /// <summary>單一群組的前端 log 緩衝：5000 行上限、關鍵字過濾、跨執行緒批次寫入</summary>
-public sealed partial class FrontendLogBuffer : ObservableObject
+public sealed partial class LogBuffer : ObservableObject
 {
     private readonly ConcurrentQueue<string> _pending = new();
     private int _flushScheduled;
