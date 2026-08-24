@@ -15,7 +15,9 @@ namespace DockerDashboard.ViewModels;
 
 public partial class MainViewModel
 {
-    // dev server / 一次性指令行程追蹤（key 為專案實例；僅 UI 執行緒讀寫）
+    // dev server / 一次性指令行程追蹤（key 為專案實例；僅 UI 執行緒讀寫）。
+    // 刻意依賴 reference equality（FrontendProject 未覆寫 Equals/GetHashCode）：此物件可變，
+    // 若日後改成值相等語意，Name/Group 一改 hash 就變，字典項目會找不回來造成行程洩漏。
     private sealed class FrontendProcess
     {
         public required ProcessStream Stream { get; init; }
@@ -66,6 +68,12 @@ public partial class MainViewModel
     }
 
     [RelayCommand]
+    private void ClearInternalLog() => InternalLog.Clear();
+
+    [RelayCommand]
+    private void ClearExternalLog() => ExternalLog.Clear();
+
+    [RelayCommand]
     private async Task StartFrontendAsync(FrontendProject? project)
     {
         if (project == null || _devProcesses.ContainsKey(project)) return;
@@ -84,9 +92,18 @@ public partial class MainViewModel
             await StopFrontendAsync(running);
         }
 
-        // 啟動前重新讀取分支，確保顯示與實際一致
+        // 啟動前重新讀取分支，確保顯示與實際一致；讀取失敗（git 不在 PATH 等）不阻擋啟動
         if (_gitService.IsGitRepository(project.FolderPath))
-            project.CurrentBranch = await _gitService.GetCurrentBranchAsync(project.FolderPath);
+        {
+            try
+            {
+                project.CurrentBranch = await _gitService.GetCurrentBranchAsync(project.FolderPath);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Frontend] 讀取 {project.Name} 分支失敗: {ex.Message}");
+            }
+        }
 
         ProcessStream stream;
         try
@@ -101,8 +118,16 @@ public partial class MainViewModel
             return;
         }
 
+        // 上面的互斥確認、讀分支都要 await，期間專案可能已被 RemoveFrontendProjectCommand 移除
+        // （該 command 未被本 command 的並行限制擋住）；此時立刻收掉剛起的孤兒行程，不註冊追蹤
+        if (!ProjectsOf(project.Group).Contains(project))
+        {
+            stream.Dispose();
+            return;
+        }
+
         var ctx = new FrontendProcess { Stream = stream, Cts = new CancellationTokenSource() };
-        _devProcesses[project] = ctx;
+        _devProcesses.Add(project, ctx); // Add 而非索引賦值：重複註冊時直接炸出來，而非靜默覆寫遺失舊 ctx
         project.IsDevRunning = true;
         project.Status = FrontendStatus.Running;
         AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ▶ [{project.Name}] 啟動 dev server（{project.DevCommand}）於 {project.FolderPath}");
@@ -243,7 +268,16 @@ public partial class MainViewModel
             FolderPath = folder,
         };
         if (_gitService.IsGitRepository(folder))
-            project.CurrentBranch = await _gitService.GetCurrentBranchAsync(folder);
+        {
+            try
+            {
+                project.CurrentBranch = await _gitService.GetCurrentBranchAsync(folder);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Frontend] 讀取 {folder} 分支失敗: {ex.Message}");
+            }
+        }
 
         var editor = new Views.FrontendProjectDialog(project)
         {
@@ -261,8 +295,8 @@ public partial class MainViewModel
     {
         if (project == null) return;
 
-        // 執行中先停止再移除
-        if (_oneShotProcesses.ContainsKey(project)) CancelOneShot(project);
+        // 執行中先停止再移除（各自的 TryGetValue 守衛已處理「沒在跑」情況，不必外層再查表）
+        await CancelOneShotAsync(project);
         await StopFrontendAsync(project);
 
         ProjectsOf(project.Group).Remove(project);
@@ -270,7 +304,9 @@ public partial class MainViewModel
         StatusMessage = $"已移除前端專案 {project.Name}";
     }
 
-    // 啟動載入：還原設定中的前端專案並背景更新分支
+    // 啟動載入：還原設定中的前端專案並背景更新分支。
+    // 刻意不比照後端用 Where(Directory.Exists) 過濾：資料夾被刪/改名時保留使用者設定的自訂
+    // 指令較有意義，按啟動才以錯誤訊息失敗即可，不強制連專案清單一起消失。
     internal void LoadFrontendProjects(AppSettings settings)
     {
         foreach (var config in settings.FrontendProjects)
@@ -286,9 +322,17 @@ public partial class MainViewModel
         foreach (var project in InternalProjects.Concat(ExternalProjects).ToList())
         {
             if (!_gitService.IsGitRepository(project.FolderPath)) continue;
-            var branch = await _gitService.GetCurrentBranchAsync(project.FolderPath);
-            await (Application.Current?.Dispatcher.InvokeAsync(() => project.CurrentBranch = branch).Task
-                   ?? Task.CompletedTask);
+            try
+            {
+                var branch = await _gitService.GetCurrentBranchAsync(project.FolderPath);
+                await (Application.Current?.Dispatcher.InvokeAsync(() => project.CurrentBranch = branch).Task
+                       ?? Task.CompletedTask);
+            }
+            catch (Exception ex)
+            {
+                // 單一 repo 讀取失敗（git 不在 PATH 等）不中止其餘專案的分支更新
+                System.Diagnostics.Debug.WriteLine($"[Frontend] 讀取 {project.Name} 分支失敗: {ex.Message}");
+            }
         }
     }
 
@@ -304,11 +348,11 @@ public partial class MainViewModel
     private Task RunE2eAsync(FrontendProject? project)
         => RunOneShotAsync(project, project?.E2eCommand, "e2e");
 
-    // 同專案一次只跑一個一次性指令；dev server 執行中仍可跑
-    private async Task RunOneShotAsync(FrontendProject? project, string? command, string label)
+    // 同專案一次只跑一個一次性指令；dev server 執行中仍可跑。全程無真正的 await，非 async。
+    private Task RunOneShotAsync(FrontendProject? project, string? command, string label)
     {
         if (project == null || string.IsNullOrWhiteSpace(command)
-            || _oneShotProcesses.ContainsKey(project)) return;
+            || _oneShotProcesses.ContainsKey(project)) return Task.CompletedTask;
 
         ProcessStream stream;
         try
@@ -319,7 +363,7 @@ public partial class MainViewModel
         {
             AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ❌ [{project.Name}] {label} 啟動失敗: {ex.Message}");
             StatusMessage = $"❌ {project.Name} {label} 啟動失敗";
-            return;
+            return Task.CompletedTask;
         }
 
         var ctx = new FrontendProcess { Stream = stream, Cts = new CancellationTokenSource() };
@@ -328,71 +372,114 @@ public partial class MainViewModel
         AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ▶ [{project.Name}] {label}（{command}）");
         StatusMessage = $"▶ {project.Name} 執行 {label} 中...";
 
-        ctx.ReaderTask = Task.Run(async () =>
+        ctx.ReaderTask = Task.Run(() => RunOneShotProcessAsync(project, ctx, label));
+        return Task.CompletedTask;
+    }
+
+    // 外層兜底：確保這個 Task 一定會完成（不 fault），CancelOneShotAsync 等它時才不會被
+    // 非預期例外打斷
+    private async Task RunOneShotProcessAsync(FrontendProject project, FrontendProcess ctx, string label)
+    {
+        try
         {
-            try
+            await RunOneShotProcessCoreAsync(project, ctx, label);
+        }
+        catch (Exception ex)
+        {
+            AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] {label} 監控發生非預期例外: {ex.Message}");
+        }
+    }
+
+    private async Task RunOneShotProcessCoreAsync(FrontendProject project, FrontendProcess ctx, string label)
+    {
+        try
+        {
+            await Task.WhenAll(
+                ReadFrontendStreamAsync(project, ctx.Stream.StandardOutput, ctx.Cts.Token),
+                ReadFrontendStreamAsync(project, ctx.Stream.StandardError, ctx.Cts.Token));
+        }
+        catch (OperationCanceledException) { }
+
+        int exitCode;
+        try
+        {
+            await ctx.Stream.WaitForExitAsync(CancellationToken.None);
+            exitCode = ctx.Stream.ExitCode;
+        }
+        catch
+        {
+            exitCode = -1;
+        }
+
+        await (Application.Current?.Dispatcher.InvokeAsync(() =>
+        {
+            _oneShotProcesses.Remove(project);
+            project.IsOneShotRunning = false; // 不動 Status：避免蓋掉 dev server 的 Crashed/Running
+
+            if (ctx.UserStopped)
             {
-                await Task.WhenAll(
-                    ReadFrontendStreamAsync(project, ctx.Stream.StandardOutput, ctx.Cts.Token),
-                    ReadFrontendStreamAsync(project, ctx.Stream.StandardError, ctx.Cts.Token));
+                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ⏹ [{project.Name}] {label} 已取消");
+                StatusMessage = $"⏹ {project.Name} {label} 已取消";
             }
-            catch (OperationCanceledException) { }
-
-            int exitCode;
-            try
+            else
             {
-                await ctx.Stream.WaitForExitAsync(CancellationToken.None);
-                exitCode = ctx.Stream.ExitCode;
-            }
-            catch
-            {
-                exitCode = -1;
+                var icon = exitCode == 0 ? "✅" : "❌";
+                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] {icon} [{project.Name}] {label} 結束（exit code {exitCode}）");
+                StatusMessage = $"{icon} {project.Name} {label} 結束（exit code {exitCode}）";
             }
 
-            Application.Current?.Dispatcher.InvokeAsync(() =>
-            {
-                _oneShotProcesses.Remove(project);
-                project.IsOneShotRunning = false; // 不動 Status：避免蓋掉 dev server 的 Crashed/Running
-
-                if (ctx.UserStopped)
-                {
-                    AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ⏹ [{project.Name}] {label} 已取消");
-                    StatusMessage = $"⏹ {project.Name} {label} 已取消";
-                }
-                else
-                {
-                    var icon = exitCode == 0 ? "✅" : "❌";
-                    AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] {icon} [{project.Name}] {label} 結束（exit code {exitCode}）");
-                    StatusMessage = $"{icon} {project.Name} {label} 結束（exit code {exitCode}）";
-                }
-
-                ctx.Stream.Dispose();
-                ctx.Cts.Dispose();
-            });
-        });
-
-        await Task.CompletedTask;
+            ctx.Stream.Dispose();
+            ctx.Cts.Dispose();
+        }).Task ?? Task.CompletedTask);
     }
 
     [RelayCommand]
-    private void CancelOneShot(FrontendProject? project)
+    private async Task CancelOneShotAsync(FrontendProject? project)
     {
         if (project == null || !_oneShotProcesses.TryGetValue(project, out var ctx)) return;
+
         ctx.UserStopped = true;
         ctx.Cts.Cancel();
         ctx.Stream.Kill(); // 整樹終止，收尾與狀態回復由 reader 收斂處理
+        if (ctx.ReaderTask != null)
+        {
+            try
+            {
+                await ctx.ReaderTask.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            catch (Exception ex)
+            {
+                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] 取消逾時或發生例外: {ex.Message}");
+            }
+        }
     }
 
     /// <summary>App 關閉時整樹終止所有前端行程（Dispose 呼叫）</summary>
     internal void StopAllFrontendProcesses()
     {
-        foreach (var ctx in _devProcesses.Values.Concat(_oneShotProcesses.Values))
+        var all = _devProcesses.Values.Concat(_oneShotProcesses.Values).ToArray();
+
+        // 只 kill 不 Dispose：reader 仍在讀取 stream，這時 Dispose 會讓它讀取中拋例外
+        foreach (var ctx in all)
         {
             ctx.UserStopped = true;
             ctx.Cts.Cancel();
-            ctx.Stream.Dispose(); // Dispose 內含 Kill(entireProcessTree: true)
+            ctx.Stream.Kill(); // entireProcessTree: true
+        }
+
+        // Dispose() 為同步方法，用 WaitAll 給行程真正退出、reader 收斂的機會（設短逾時避免卡死關閉流程）
+        var readerTasks = all.Select(ctx => ctx.ReaderTask).Where(t => t != null).Select(t => t!).ToArray();
+        if (readerTasks.Length > 0)
+            Task.WaitAll(readerTasks, TimeSpan.FromSeconds(3));
+
+        // 逐一 Dispose：reader 若已跑完自己的收尾會是重複 Dispose，安全（ProcessStream 有 _disposed 防護，
+        // CancellationTokenSource.Dispose 本身也可重複呼叫）；reader 沒機會跑完時則確保資源真的釋放
+        foreach (var ctx in all)
+        {
+            ctx.Stream.Dispose();
             ctx.Cts.Dispose();
         }
+
         _devProcesses.Clear();
         _oneShotProcesses.Clear();
     }

@@ -154,6 +154,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public async Task InitializeAsync()
     {
         var settings = await _settingsService.LoadAsync();
+
+        // 盡早載入：SaveSettingsAsync 會整包覆寫 settings.json，若視窗在下面 Docker 連線等待
+        // 期間仍可互動、使用者恰好觸發存檔，載入太晚會把尚未還原的 FrontendProjects 存成空清單
+        LoadFrontendProjects(settings);
+
         ApplyDockerModeSettings(settings);
 
         // WSL2 模式：[boot] 的 service docker start 可能需數秒才完成，
@@ -189,8 +194,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         foreach (var folder in settings.RecentlyRemovedFolders)
             RecentlyRemovedFolders.Add(folder);
-
-        LoadFrontendProjects(settings);
 
         var loaded = await Task.WhenAll(
             settings.ImportedFolders

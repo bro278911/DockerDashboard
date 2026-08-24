@@ -39,36 +39,36 @@
                     <Button Content="啟動" Height="26" Padding="8,0"
                             Style="{StaticResource MaterialDesignFlatButton}"
                             Visibility="{Binding IsDevStopped, Converter={StaticResource BoolToVisibilityConverter}}"
-                            Command="{Binding DataContext.StartFrontendCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Command="{Binding Data.StartFrontendCommand, Source={StaticResource Proxy}}"
                             CommandParameter="{Binding}" />
                     <Button Content="停止" Height="26" Padding="8,0"
                             Style="{StaticResource MaterialDesignFlatButton}"
                             Visibility="{Binding IsDevRunning, Converter={StaticResource BoolToVisibilityConverter}}"
-                            Command="{Binding DataContext.StopFrontendCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Command="{Binding Data.StopFrontendCommand, Source={StaticResource Proxy}}"
                             CommandParameter="{Binding}" />
                     <Button Content="install" Height="26" Padding="8,0"
                             Style="{StaticResource MaterialDesignFlatButton}"
                             IsEnabled="{Binding IsNotBusy}"
-                            Command="{Binding DataContext.RunInstallCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Command="{Binding Data.RunInstallCommand, Source={StaticResource Proxy}}"
                             CommandParameter="{Binding}" />
                     <Button Content="vitest" Height="26" Padding="8,0"
                             Style="{StaticResource MaterialDesignFlatButton}"
                             IsEnabled="{Binding IsNotBusy}"
-                            Command="{Binding DataContext.RunTestCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Command="{Binding Data.RunTestCommand, Source={StaticResource Proxy}}"
                             CommandParameter="{Binding}" />
                     <Button Content="e2e" Height="26" Padding="8,0"
                             Style="{StaticResource MaterialDesignFlatButton}"
                             IsEnabled="{Binding IsNotBusy}"
-                            Command="{Binding DataContext.RunE2eCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Command="{Binding Data.RunE2eCommand, Source={StaticResource Proxy}}"
                             CommandParameter="{Binding}" />
                     <Button Content="取消" Height="26" Padding="8,0" Foreground="#F44336"
                             Style="{StaticResource MaterialDesignFlatButton}"
                             Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibilityConverter}}"
-                            Command="{Binding DataContext.CancelOneShotCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Command="{Binding Data.CancelOneShotCommand, Source={StaticResource Proxy}}"
                             CommandParameter="{Binding}" />
                     <Button Content="移除" Height="26" Padding="8,0" Foreground="Gray"
                             Style="{StaticResource MaterialDesignFlatButton}"
-                            Command="{Binding DataContext.RemoveFrontendProjectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Command="{Binding Data.RemoveFrontendProjectCommand, Source={StaticResource Proxy}}"
                             CommandParameter="{Binding}" />
                 </StackPanel>
             </StackPanel>
@@ -669,6 +669,11 @@
                                 <DockPanel Grid.Row="0" Margin="8,6">
                                     <TextBlock Text="{Binding InternalRunningLabel}"
                                                VerticalAlignment="Center" FontWeight="Bold" />
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource MaterialDesignIconForegroundButton}"
+                                            Command="{Binding ClearInternalLogCommand}" ToolTip="清除日誌"
+                                            Width="28" Height="28" Margin="8,0,0,0">
+                                        <materialDesign:PackIcon Kind="Delete" Width="16" Height="16" />
+                                    </Button>
                                     <TextBox DockPanel.Dock="Right" Width="200" HorizontalAlignment="Right"
                                              materialDesign:HintAssist.Hint="過濾關鍵字"
                                              materialDesign:TextFieldAssist.HasClearButton="True"
@@ -689,6 +694,11 @@
                                 <DockPanel Grid.Row="0" Margin="8,6">
                                     <TextBlock Text="{Binding ExternalRunningLabel}"
                                                VerticalAlignment="Center" FontWeight="Bold" />
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource MaterialDesignIconForegroundButton}"
+                                            Command="{Binding ClearExternalLogCommand}" ToolTip="清除日誌"
+                                            Width="28" Height="28" Margin="8,0,0,0">
+                                        <materialDesign:PackIcon Kind="Delete" Width="16" Height="16" />
+                                    </Button>
                                     <TextBox DockPanel.Dock="Right" Width="200" HorizontalAlignment="Right"
                                              materialDesign:HintAssist.Hint="過濾關鍵字"
                                              materialDesign:TextFieldAssist.HasClearButton="True"
