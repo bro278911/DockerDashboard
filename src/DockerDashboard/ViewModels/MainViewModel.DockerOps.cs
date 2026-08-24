@@ -568,8 +568,24 @@ public partial class MainViewModel
             return;
         }
 
+        // 依「掃描結束當下」的清單合併，不是拿掃描開始時的舊快照整批覆蓋：
+        // 掃描期間使用者可能匯入新專案（會被舊快照抹掉）或移除專案（會被舊快照復活）
+        var currentFolders = Projects
+            .Select(p => p.FolderPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var rescanned = results
+            .Where(p => currentFolders.Contains(p.FolderPath))
+            .ToList();
+        var rescannedFolders = rescanned
+            .Select(p => p.FolderPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // 掃描期間新匯入、不在本次掃描結果內的專案原樣保留
+        var addedDuringScan = Projects
+            .Where(p => !rescannedFolders.Contains(p.FolderPath))
+            .ToList();
+
         Projects.Clear();
-        foreach (var project in results)
+        foreach (var project in rescanned.Concat(addedDuringScan))
         {
             Projects.Add(project);
             if (project.ComposeFiles.Count == 0)

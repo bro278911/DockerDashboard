@@ -24,6 +24,11 @@ public partial class MainViewModel
         public required CancellationTokenSource Cts { get; init; }
         public bool UserStopped { get; set; }
         public Task? ReaderTask { get; set; }
+
+        // 收尾一次性 guard：監控任務的 finally 與停止操作的自我修復可能先後觸發收尾，
+        // 重複執行會重複寫 log、重複釋放，極端情況還會移除同專案稍後註冊的新行程
+        private int _finished;
+        public bool TryBeginFinish() => Interlocked.Exchange(ref _finished, 1) == 0;
     }
 
     private readonly Dictionary<FrontendProject, FrontendProcess> _devProcesses = [];
@@ -241,6 +246,7 @@ public partial class MainViewModel
     private async Task RunDevProcessAsync(FrontendProject project, FrontendProcess ctx)
     {
         var exitCode = -1;
+        var confirmedExit = false;
         try
         {
             try
@@ -251,7 +257,7 @@ public partial class MainViewModel
             }
             catch (OperationCanceledException) { }
 
-            exitCode = await WaitForFrontendExitAsync(project, ctx, "dev server");
+            (exitCode, confirmedExit) = await WaitForFrontendExitAsync(project, ctx, "dev server");
         }
         catch (Exception ex)
         {
@@ -259,15 +265,18 @@ public partial class MainViewModel
         }
         finally
         {
-            await FinishDevProcessAsync(project, ctx, exitCode);
+            await FinishDevProcessAsync(project, ctx, exitCode, confirmedExit);
         }
     }
 
-    private Task FinishDevProcessAsync(FrontendProject project, FrontendProcess ctx, int exitCode)
+    private Task FinishDevProcessAsync(
+        FrontendProject project, FrontendProcess ctx, int exitCode, bool confirmedExit)
     {
-        // 行程未確認結束就保留追蹤與執行中狀態，讓停止鈕留著可再試（正常路徑不會走到這裡：
-        // WaitForFrontendExitAsync 會一直等到行程真的結束；此處只擋監控任務提早退出的殘餘情況）
-        if (!ctx.Stream.HasExited && !_frontendShutdown)
+        // 未確認結束就保留追蹤與執行中狀態，讓停止鈕留著可再試（正常路徑不會走到這裡：
+        // WaitForFrontendExitAsync 會一直等到行程真的結束；此處只擋監控任務提早退出的殘餘情況）。
+        // 判定用「這次等待是否確認結束」而非重查 HasExited：查詢本身可能持續失敗，
+        // 那會讓項目永遠收不了尾
+        if (!confirmedExit && !_frontendShutdown)
         {
             return (Application.Current?.Dispatcher.InvokeAsync(() =>
             {
@@ -277,9 +286,13 @@ public partial class MainViewModel
             }).Task ?? Task.CompletedTask);
         }
 
+        if (!ctx.TryBeginFinish()) return Task.CompletedTask;
+
         void Finish()
         {
-            _devProcesses.Remove(project);
+            // 只移除仍指向這個 ctx 的項目，避免把同專案稍後註冊的新行程誤刪
+            if (_devProcesses.TryGetValue(project, out var current) && ReferenceEquals(current, ctx))
+                _devProcesses.Remove(project);
             project.IsDevRunning = false;
 
             if (ctx.UserStopped)
@@ -324,21 +337,25 @@ public partial class MainViewModel
     /// 早期版本逾時即放棄，收尾照跑，結果 UI 顯示已停止但 node 還活著佔著 port；
     /// 一直等下去則 ReaderTask 保持未完成，停止操作會回報失敗、按鈕留著可重試，狀態才誠實
     /// </summary>
-    private async Task<int> WaitForFrontendExitAsync(
+    private async Task<(int ExitCode, bool ConfirmedExit)> WaitForFrontendExitAsync(
         FrontendProject project, FrontendProcess ctx, string label)
     {
+        // 等待工作只建立一次：每輪重建的話，WaitAsync 逾時並不會取消底層等待，
+        // 對殺不掉的行程會不斷累積待處理工作與事件註冊
+        var exitTask = ctx.Stream.WaitForExitAsync(CancellationToken.None);
+
         while (true)
         {
             try
             {
-                await ctx.Stream.WaitForExitAsync(CancellationToken.None)
-                    .WaitAsync(TimeSpan.FromSeconds(15));
-                return ctx.Stream.ExitCode;
+                await exitTask.WaitAsync(TimeSpan.FromSeconds(15));
+                return (ctx.Stream.ExitCode, true);
             }
             catch (TimeoutException)
             {
                 // App 關閉中就不再纏鬥，交由 OS 回收，避免拖住關閉流程
-                if (_frontendShutdown || ctx.Stream.HasExited) return -1;
+                if (_frontendShutdown) return (-1, false);
+                if (ctx.Stream.HasExited) return (-1, true);
 
                 AppendFrontendLog(project,
                     $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] {label} 尚未結束（PID {ctx.Stream.Id?.ToString() ?? "?"}），重試終止中…");
@@ -346,7 +363,7 @@ public partial class MainViewModel
             }
             catch
             {
-                return -1;
+                return (-1, false);
             }
         }
     }
@@ -390,7 +407,7 @@ public partial class MainViewModel
 
         // 行程其實已結束但追蹤還在（監控任務提早退出時會如此）→ 補跑收尾自我修復
         if (_devProcesses.ContainsKey(project))
-            await FinishDevProcessAsync(project, ctx, -1);
+            await FinishDevProcessAsync(project, ctx, -1, confirmedExit: true);
 
         return true;
     }
@@ -517,8 +534,24 @@ public partial class MainViewModel
         var devStopped = await StopFrontendAsync(project);
         if (!oneShotStopped || !devStopped)
         {
-            StatusMessage = $"⚠ {project.Name} 的行程未確認結束，已保留專案（可再次嘗試停止）";
-            return;
+            // 不能只是拒絕移除：行程若始終殺不掉（權限、handle 失效），使用者會連移除都做不到。
+            // 給明確逃生口，但先講清楚代價
+            var force = System.Windows.MessageBox.Show(
+                $"{project.Name} 的行程未確認結束，可能仍在執行並佔用 port。\n\n" +
+                "仍要移除嗎？移除後將無法再從本工具停止它（需自行於工作管理員終止）。",
+                "移除前端專案",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+            if (force != System.Windows.MessageBoxResult.Yes)
+            {
+                StatusMessage = $"⚠ {project.Name} 的行程未確認結束，已保留專案（可再次嘗試停止）";
+                return;
+            }
+
+            AppendFrontendLog(project,
+                $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] 使用者選擇強制移除，行程可能仍在執行");
+            _devProcesses.Remove(project);
+            _oneShotProcesses.Remove(project);
         }
 
         ProjectsOf(project.Group).Remove(project);
@@ -604,6 +637,7 @@ public partial class MainViewModel
     private async Task RunOneShotProcessAsync(FrontendProject project, FrontendProcess ctx, string label)
     {
         var exitCode = -1;
+        var confirmedExit = false;
         try
         {
             try
@@ -614,7 +648,7 @@ public partial class MainViewModel
             }
             catch (OperationCanceledException) { }
 
-            exitCode = await WaitForFrontendExitAsync(project, ctx, label);
+            (exitCode, confirmedExit) = await WaitForFrontendExitAsync(project, ctx, label);
         }
         catch (Exception ex)
         {
@@ -622,15 +656,15 @@ public partial class MainViewModel
         }
         finally
         {
-            await FinishOneShotProcessAsync(project, ctx, label, exitCode);
+            await FinishOneShotProcessAsync(project, ctx, label, exitCode, confirmedExit);
         }
     }
 
     private Task FinishOneShotProcessAsync(
-        FrontendProject project, FrontendProcess ctx, string label, int exitCode)
+        FrontendProject project, FrontendProcess ctx, string label, int exitCode, bool confirmedExit)
     {
-        // 同 dev server：行程未確認結束就保留 Busy 與追蹤，否則取消鈕消失、行程卻還在跑
-        if (!ctx.Stream.HasExited && !_frontendShutdown)
+        // 同 dev server：未確認結束就保留 Busy 與追蹤，否則取消鈕消失、行程卻還在跑
+        if (!confirmedExit && !_frontendShutdown)
         {
             return (Application.Current?.Dispatcher.InvokeAsync(() =>
             {
@@ -640,9 +674,12 @@ public partial class MainViewModel
             }).Task ?? Task.CompletedTask);
         }
 
+        if (!ctx.TryBeginFinish()) return Task.CompletedTask;
+
         void Finish()
         {
-            _oneShotProcesses.Remove(project);
+            if (_oneShotProcesses.TryGetValue(project, out var current) && ReferenceEquals(current, ctx))
+                _oneShotProcesses.Remove(project);
             project.IsOneShotRunning = false; // 不動 Status：避免蓋掉 dev server 的 Crashed/Running
 
             if (ctx.UserStopped)
@@ -695,7 +732,7 @@ public partial class MainViewModel
         if (!ctx.Stream.HasExited) return false;
 
         if (_oneShotProcesses.ContainsKey(project))
-            await FinishOneShotProcessAsync(project, ctx, "指令", -1);
+            await FinishOneShotProcessAsync(project, ctx, "指令", -1, confirmedExit: true);
 
         return true;
     }
