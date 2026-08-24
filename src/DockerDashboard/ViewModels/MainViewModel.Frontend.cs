@@ -51,12 +51,15 @@ public partial class MainViewModel
         IEnumerable<FrontendProject> groupProjects, FrontendProject candidate)
         => groupProjects.FirstOrDefault(p => p.IsDevRunning && !ReferenceEquals(p, candidate));
 
+    /// <summary>分支顯示字樣，非 git 資料夾以固定字樣代替空字串</summary>
+    internal static string BranchLabel(FrontendProject project)
+        => string.IsNullOrEmpty(project.CurrentBranch) ? "非 git" : project.CurrentBranch;
+
     internal static string BuildRunningLabel(IEnumerable<FrontendProject> groupProjects)
     {
         var running = groupProjects.FirstOrDefault(p => p.IsDevRunning);
         if (running == null) return "無執行中專案";
-        var branch = string.IsNullOrEmpty(running.CurrentBranch) ? "非 git" : running.CurrentBranch;
-        return $"{running.Name}（{running.FolderName} / {branch}）";
+        return $"{running.Name}（{running.FolderName} / {BranchLabel(running)}）";
     }
 
     private void UpdateFrontendRunningLabels()
@@ -137,7 +140,7 @@ public partial class MainViewModel
         if (running != null)
         {
             var confirm = System.Windows.MessageBox.Show(
-                $"同組已有「{running.Name}」（{running.FolderName} / {running.CurrentBranch}）執行中。\n\n" +
+                $"同組已有「{running.Name}」（{running.FolderName} / {BranchLabel(running)}）執行中。\n\n" +
                 $"要停止它並啟動「{project.Name}」嗎？",
                 "同組互斥確認",
                 System.Windows.MessageBoxButton.YesNo,
