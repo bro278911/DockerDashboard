@@ -376,14 +376,14 @@ public partial class MainViewModel
     {
         if (project == null) return;
 
-        // 先停行程；即使沒能確認結束，Job Object 也保證它不會活得比 App 久。
-        // StopDevAsync 等待期間使用者仍可能觸發一次性指令，故停完 dev server 後再取消一次，
-        // 避免專案從 UI／設定檔消失後，一次性指令繼續跑卻再也沒有入口可以取消它
+        // 先從集合移除：該專案列（含 install/vitest/e2e 按鈕）立刻從 UI 消失，使用者無從
+        // 在停止行程期間再觸發新的一次性指令，因此不需要再靠第二次取消補這個窗口
+        ProjectsOf(project.Group).Remove(project);
+
+        // 再停行程；即使沒能確認結束，Job Object 也保證它不會活得比 App 久
         await _frontendProcesses.CancelOneShotAsync(project);
         await _frontendProcesses.StopDevAsync(project);
-        await _frontendProcesses.CancelOneShotAsync(project);
 
-        ProjectsOf(project.Group).Remove(project);
         UpdateFrontendRunningLabels();
         await SaveSettingsAsync();
         StatusMessage = $"已移除前端專案 {project.Name}";

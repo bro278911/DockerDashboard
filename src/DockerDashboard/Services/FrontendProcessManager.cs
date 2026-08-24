@@ -205,7 +205,15 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
         {
             await ProcessOutputReader.ReadAllAsync(
                 entry.Stream,
-                line => OutputReceived?.Invoke(this, new FrontendOutputEventArgs(project, line)),
+                line =>
+                {
+                    // 與 StateChanged 同一原則：訂閱者拋例外不可讓這個讀取迴圈中斷，否則該行程的
+                    // log 會靜默停止更新，但狀態機仍顯示行程在跑，是最難查的失敗模式。唯一訂閱者
+                    // 最終會呼叫 Dispatcher.InvokeAsync，dispatcher 關閉期間該呼叫可能拋例外，
+                    // 不屬於「不可能發生的情境」
+                    try { OutputReceived?.Invoke(this, new FrontendOutputEventArgs(project, line)); }
+                    catch { /* 吞掉，manager 不對訂閱者負責 */ }
+                },
                 entry.Cts.Token);
         }
         catch { /* 讀取結束或被取消，交由下方等待行程結束 */ }

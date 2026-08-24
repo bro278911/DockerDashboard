@@ -53,4 +53,15 @@ public class ProcessLauncherTests
         process.WaitForExit();
         Assert.Equal(0, process.ExitCode);
     }
+
+    // 釘住：UseShellExecute = true 的行程不會被納入 Job（ShellExecute 啟動的行程不是我們的子代），
+    // 誤用 Start 會靜默失去納管，機械攔截取代原本只靠 XML 註解約定的規則
+    [Fact]
+    public void Start_UseShellExecute為true時拋例外()
+    {
+        var psi = Psi("exit 0");
+        psi.UseShellExecute = true;
+
+        Assert.Throws<ArgumentException>(() => ProcessLauncher.Start(psi));
+    }
 }

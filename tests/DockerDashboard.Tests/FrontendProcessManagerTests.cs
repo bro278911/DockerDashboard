@@ -181,6 +181,25 @@ public class FrontendProcessManagerTests
         Assert.IsType<StartResult.Started>(restart);
     }
 
+    // 釘住：OutputReceived 訂閱者拋例外時，讀取迴圈不能因此中斷，行程仍須正常跑完並回報正確的
+    // 最終狀態；與上面的 StateChanged_訂閱者拋例外 測試對稱（同一原則，見 MonitorAsync 內註解）
+    [Fact]
+    public async Task OutputReceived_訂閱者拋例外_行程仍正常跑完且狀態正確()
+    {
+        var manager = CreateManager();
+        var project = Project("echo hello-manager & exit 3");
+
+        manager.OutputReceived += (_, _) => throw new InvalidOperationException("訂閱者刻意拋出例外，驗證讀取迴圈不受影響");
+
+        var crashed = WaitForStateAsync(manager, FrontendProcessState.Crashed, TimeSpan.FromSeconds(20));
+        var result = await manager.StartDevAsync(project, [project]);
+
+        Assert.IsType<StartResult.Started>(result);
+        var evt = await crashed;
+        Assert.Equal(3, evt.ExitCode);
+        Assert.False(manager.IsDevActive(project));
+    }
+
     [Fact]
     public async Task RunOneShotAsync_與devserver並行_兩軸互不影響()
     {

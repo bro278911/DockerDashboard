@@ -142,6 +142,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public async Task InitializeAsync()
     {
+        // Job Object 不可用時，「App 結束必連帶回收子行程」的保證就不成立，Release 組態沒有
+        // Debug.WriteLine 可看，必須在這裡明確告知使用者
+        if (ProcessLauncher.JobUnavailableReason is { } jobUnavailableReason)
+            AppendLog($"⚠ 行程回收保證不可用（{jobUnavailableReason}），App 異常結束時可能殘留子行程");
+
         var settings = await _settingsService.LoadAsync();
 
         // 盡早載入：SaveSettingsAsync 會整包覆寫 settings.json，若視窗在下面 Docker 連線等待
