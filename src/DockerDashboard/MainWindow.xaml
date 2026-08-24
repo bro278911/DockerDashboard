@@ -557,7 +557,7 @@
                                 <TextBox Width="160" Margin="0,0,8,0"
                                          materialDesign:HintAssist.Hint="搜尋日誌..."
                                          materialDesign:TextFieldAssist.HasClearButton="True"
-                                         Text="{Binding LogFilter, UpdateSourceTrigger=PropertyChanged}"
+                                         Text="{Binding BackendLog.Filter, UpdateSourceTrigger=PropertyChanged}"
                                          Style="{StaticResource MaterialDesignOutlinedTextBox}"
                                          VerticalAlignment="Center" FontSize="12"
                                          Height="28" Padding="4,2" />
@@ -580,7 +580,7 @@
                         </DockPanel>
 
                         <ListBox Grid.Row="1"
-                                 ItemsSource="{Binding LogView}"
+                                 ItemsSource="{Binding BackendLog.View}"
                                  SelectionMode="Extended"
                                  FontFamily="Consolas, Courier New"
                                  FontSize="12"

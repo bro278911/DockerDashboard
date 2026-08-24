@@ -16,17 +16,6 @@ public partial class MainViewModel
     private ProcessStream? _logProcess;
     private CancellationTokenSource? _logCts;
 
-    partial void OnLogFilterChanged(string value)
-    {
-        LogView?.Refresh();
-    }
-
-    private bool LogFilterPredicate(object item)
-    {
-        if (string.IsNullOrWhiteSpace(LogFilter)) return true;
-        return item is string line && line.Contains(LogFilter, StringComparison.OrdinalIgnoreCase);
-    }
-
     partial void OnSelectedServiceChanged(DockerService? value)
     {
         if (value != null)
@@ -43,7 +32,7 @@ public partial class MainViewModel
     {
         if (service == null) return;
         StopLogStream();
-        LogLines.Clear();
+        BackendLog.Clear();
 
         var containerName = !string.IsNullOrEmpty(service.ContainerId)
             ? service.ContainerId
@@ -71,7 +60,7 @@ public partial class MainViewModel
     [RelayCommand]
     private void ClearLogs()
     {
-        LogLines.Clear();
+        BackendLog.Clear();
     }
 
     [RelayCommand]
@@ -86,7 +75,7 @@ public partial class MainViewModel
 
         if (dialog.ShowDialog() != true) return;
 
-        var snapshot = LogLines.ToArray();
+        var snapshot = BackendLog.Lines.ToArray();
         await File.WriteAllLinesAsync(dialog.FileName, snapshot);
         StatusMessage = $"日誌已匯出到 {dialog.FileName}";
     }
@@ -124,9 +113,9 @@ public partial class MainViewModel
     [RelayCommand]
     private void CopyAllLogs()
     {
-        if (LogLines.Count == 0) return;
-        System.Windows.Clipboard.SetText(string.Join(Environment.NewLine, LogLines));
-        StatusMessage = $"已複製全部 {LogLines.Count} 行日誌";
+        if (BackendLog.Lines.Count == 0) return;
+        System.Windows.Clipboard.SetText(string.Join(Environment.NewLine, BackendLog.Lines));
+        StatusMessage = $"已複製全部 {BackendLog.Lines.Count} 行日誌";
     }
 
     internal void StopLogStream()

@@ -96,7 +96,7 @@ public partial class MainViewModel
         IsOperating = true;
         IsCancelling = false;
         StatusMessage = statusMessage;
-        LogLines.Clear();
+        BackendLog.Clear();
         AppendLog($"[{DateTime.Now:HH:mm:ss}] {headerLog}");
 
         var errors = new ConcurrentBag<string>();

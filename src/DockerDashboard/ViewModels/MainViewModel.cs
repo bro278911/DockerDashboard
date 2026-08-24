@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -7,7 +6,6 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DockerDashboard.Models;
@@ -29,8 +27,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly UpdateService _updateService;
     private readonly FrontendProcessManager _frontendProcesses;
     private Forms.NotifyIcon? _notifyIcon;
-    private readonly ConcurrentQueue<string> _pendingLogQueue = new();
-    private int _isLogFlushScheduled;
     private int _batchStartupParallelism = 3;
     // 兩份清單各自的「內容是否可信」旗標，供 SaveSettingsAsync 判斷可否覆寫對應設定欄位。
     // 載入中或重新掃描中集合會是空的或不完整，此時存檔會把設定寫成空清單
@@ -41,18 +37,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _operationCts;
 
     public ObservableCollection<DockerProject> Projects { get; } = [];
-    public ObservableCollection<string> LogLines { get; } = [];
+    public LogBuffer BackendLog { get; } = new();
     public ObservableCollection<string> RecentlyRemovedFolders { get; } = [];
-
-    private ICollectionView? _logView;
-    public ICollectionView? LogView
-    {
-        get => _logView;
-        private set => SetProperty(ref _logView, value);
-    }
-
-    [ObservableProperty]
-    private string _logFilter = string.Empty;
 
     [ObservableProperty]
     private bool _fastDevAutoReloadEnabled = true;
@@ -147,9 +133,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _fastDevReload.OnSolutionChanged = OnFastDevSolutionChangedAsync;
         _frontendProcesses.OutputReceived += OnFrontendOutput;
         _frontendProcesses.StateChanged += OnFrontendStateChanged;
-
-        LogView = CollectionViewSource.GetDefaultView(LogLines);
-        LogView.Filter = LogFilterPredicate;
     }
 
     public void SetNotifyIcon(Forms.NotifyIcon? icon)
@@ -505,40 +488,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    internal void AppendLog(string message)
-    {
-        _pendingLogQueue.Enqueue(message);
-        if (Interlocked.Exchange(ref _isLogFlushScheduled, 1) == 1)
-            return;
-
-        Application.Current?.Dispatcher.InvokeAsync(FlushPendingLogs);
-    }
-
-    private void FlushPendingLogs()
-    {
-        try
-        {
-            while (_pendingLogQueue.TryDequeue(out var line))
-                AppendLogLine(line);
-        }
-        finally
-        {
-            Interlocked.Exchange(ref _isLogFlushScheduled, 0);
-            if (!_pendingLogQueue.IsEmpty && Interlocked.Exchange(ref _isLogFlushScheduled, 1) == 0)
-                Application.Current?.Dispatcher.InvokeAsync(FlushPendingLogs);
-        }
-    }
-
-    private void AppendLogLine(string message)
-    {
-        LogLines.Add(message);
-        if (LogLines.Count <= 5000) return;
-        // Skip(500) 後 Clear + re-add：O(n) 位移 vs 原本 500 次 RemoveAt(0) 各自 O(n) 位移
-        var kept = LogLines.Skip(500).ToArray();
-        LogLines.Clear();
-        foreach (var line in kept)
-            LogLines.Add(line);
-    }
+    internal void AppendLog(string message) => BackendLog.Append(message);
 
     public List<string> ParsePortLinks(string? ports)
     {
