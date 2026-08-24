@@ -37,12 +37,7 @@ public class SettingsService
         try
         {
             if (_cached != null) return _cached;
-
-            if (!File.Exists(_settingsPath))
-                return _cached = new AppSettings();
-
-            var json = await File.ReadAllTextAsync(_settingsPath);
-            return _cached = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+            return _cached = await ReadAsync();
         }
         finally
         {
@@ -61,16 +56,59 @@ public class SettingsService
         try
         {
             _cached = settings;
-            var json = JsonSerializer.Serialize(settings, JsonOptions);
-
-            Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath)!);
-            var tempPath = _settingsPath + ".tmp";
-            await File.WriteAllTextAsync(tempPath, json);
-            File.Move(tempPath, _settingsPath, overwrite: true);
+            await WriteAsync(settings);
         }
         finally
         {
             _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// 在鎖內完成「取設定 → 變更 → 落檔」。呼叫端拿到的是共用的 cached 物件，
+    /// 若在鎖外變更，序列化可能讀到與呼叫端預期不同的混合狀態；用本方法可讓變更與
+    /// 序列化位於同一個臨界區
+    /// </summary>
+    public async Task UpdateAsync(Action<AppSettings> mutate)
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            var settings = _cached ??= await ReadAsync();
+            mutate(settings);
+            await WriteAsync(settings);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task<AppSettings> ReadAsync()
+    {
+        if (!File.Exists(_settingsPath)) return new AppSettings();
+
+        var json = await File.ReadAllTextAsync(_settingsPath);
+        return JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+    }
+
+    private async Task WriteAsync(AppSettings settings)
+    {
+        var json = JsonSerializer.Serialize(settings, JsonOptions);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath)!);
+        // 暫存檔名加上唯一後綴：固定名稱時，同時開兩個 Dashboard 會互相覆蓋或搬走對方的暫存檔，
+        // 造成 File.Move 失敗，或把另一個 writer 的內容發布成正式設定
+        var tempPath = $"{_settingsPath}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await File.WriteAllTextAsync(tempPath, json);
+            File.Move(tempPath, _settingsPath, overwrite: true);
+        }
+        catch
+        {
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+            throw;
         }
     }
 }

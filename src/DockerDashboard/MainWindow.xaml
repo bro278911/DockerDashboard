@@ -26,10 +26,13 @@
             <StackPanel>
                 <DockPanel>
                     <TextBlock Text="●" FontSize="12" VerticalAlignment="Center"
-                               Foreground="{Binding DisplayStatus, Converter={StaticResource FrontendStatusToColorConverter}}" />
+                               Foreground="{Binding DisplayStatus, Converter={StaticResource FrontendStatusToColorConverter}}"
+                               AutomationProperties.Name="{Binding StatusText}" />
+                    <TextBlock Text="{Binding StatusText}" FontSize="11" Margin="4,0,0,0"
+                               Foreground="Gray" VerticalAlignment="Center" />
                     <TextBlock Text="{Binding Name}" FontWeight="Bold" Margin="6,0,0,0"
                                VerticalAlignment="Center" />
-                    <TextBlock DockPanel.Dock="Right" Text="{Binding CurrentBranch}"
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding BranchDisplay}"
                                Foreground="#1E88E5" FontSize="11" VerticalAlignment="Center"
                                HorizontalAlignment="Right" />
                 </DockPanel>

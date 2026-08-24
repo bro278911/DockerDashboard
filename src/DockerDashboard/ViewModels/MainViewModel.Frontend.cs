@@ -56,15 +56,11 @@ public partial class MainViewModel
         IEnumerable<FrontendProject> groupProjects, FrontendProject candidate)
         => groupProjects.FirstOrDefault(p => p.IsDevRunning && !ReferenceEquals(p, candidate));
 
-    /// <summary>分支顯示字樣，非 git 資料夾以固定字樣代替空字串</summary>
-    internal static string BranchLabel(FrontendProject project)
-        => string.IsNullOrEmpty(project.CurrentBranch) ? "非 git" : project.CurrentBranch;
-
     internal static string BuildRunningLabel(IEnumerable<FrontendProject> groupProjects)
     {
         var running = groupProjects.FirstOrDefault(p => p.IsDevRunning);
         if (running == null) return "無執行中專案";
-        return $"{running.Name}（{running.FolderName} / {BranchLabel(running)}）";
+        return $"{running.Name}（{running.FolderName} / {running.BranchDisplay}）";
     }
 
     private void UpdateFrontendRunningLabels()
@@ -140,12 +136,22 @@ public partial class MainViewModel
 
     private async Task StartFrontendCoreAsync(FrontendProject project)
     {
+        // 同組已有另一個專案在啟動流程中（IsDevRunning 要到行程建立才 true，這段空窗不擋的話
+        // 兩個流程會各自通過互斥檢查、最後同組並存）。此時沒有行程可停，直接請使用者稍候
+        var starting = ProjectsOf(project.Group)
+            .FirstOrDefault(p => p.IsStarting && !ReferenceEquals(p, project));
+        if (starting != null)
+        {
+            StatusMessage = $"⚠ {starting.Name} 正在啟動中，請稍候再啟動 {project.Name}";
+            return;
+        }
+
         // 同組互斥：已有執行中專案時先確認再關舊起新
         var running = FindRunningInGroup(ProjectsOf(project.Group), project);
         if (running != null)
         {
             var confirm = System.Windows.MessageBox.Show(
-                $"同組已有「{running.Name}」（{running.FolderName} / {BranchLabel(running)}）執行中。\n\n" +
+                $"同組已有「{running.Name}」（{running.FolderName} / {running.BranchDisplay}）執行中。\n\n" +
                 $"要停止它並啟動「{project.Name}」嗎？",
                 "同組互斥確認",
                 System.Windows.MessageBoxButton.YesNo,
@@ -355,7 +361,13 @@ public partial class MainViewModel
             {
                 // App 關閉中就不再纏鬥，交由 OS 回收，避免拖住關閉流程
                 if (_frontendShutdown) return (-1, false);
-                if (ctx.Stream.HasExited) return (-1, true);
+                if (ctx.Stream.HasExited)
+                {
+                    // 讀真實 exit code：跑很久但成功的 install/test 剛好在這輪逾時窗結束時，
+                    // 硬回 -1 會被記成失敗
+                    try { return (ctx.Stream.ExitCode, true); }
+                    catch { return (-1, true); }
+                }
 
                 AppendFrontendLog(project,
                     $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] {label} 尚未結束（PID {ctx.Stream.Id?.ToString() ?? "?"}），重試終止中…");
@@ -532,6 +544,12 @@ public partial class MainViewModel
         // 任一沒確認結束就不移除：否則行程還活著卻從 UI 與設定消失，使用者再也沒有停止它的入口
         var oneShotStopped = await CancelOneShotAsync(project);
         var devStopped = await StopFrontendAsync(project);
+
+        // 停 dev server 期間 install/vitest/e2e 仍可按，可能又起了一個新的一次性指令，
+        // 不再取消一次就會跟著專案一起消失卻繼續執行
+        if (oneShotStopped)
+            oneShotStopped = await CancelOneShotAsync(project);
+
         if (!oneShotStopped || !devStopped)
         {
             // 不能只是拒絕移除：行程若始終殺不掉（權限、handle 失效），使用者會連移除都做不到。
@@ -548,13 +566,14 @@ public partial class MainViewModel
                 return;
             }
 
+            // 刻意不從字典移除：那是唯一還握得到該行程的入口，拿掉的話 StopAllFrontendProcesses
+            // 在關閉時也看不到它，行程就會活得比 App 久。專案只從 UI 清單移除即可
             AppendFrontendLog(project,
-                $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] 使用者選擇強制移除，行程可能仍在執行");
-            _devProcesses.Remove(project);
-            _oneShotProcesses.Remove(project);
+                $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] 使用者選擇強制移除，行程仍保留追蹤直到結束");
         }
 
         ProjectsOf(project.Group).Remove(project);
+        UpdateFrontendRunningLabels(); // 移除的專案不該繼續出現在 log 標頭的「執行中」
         await SaveSettingsAsync();
         StatusMessage = $"已移除前端專案 {project.Name}";
     }

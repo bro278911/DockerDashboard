@@ -354,26 +354,52 @@ public partial class MainViewModel : ObservableObject, IDisposable
             RecentlyRemovedFolders.Remove(existing);
     }
 
-    internal async Task SaveSettingsAsync()
+    internal Task SaveSettingsAsync()
     {
-        var settings = await _settingsService.LoadAsync();
-
-        // Docker 專案清單在 InitializeAsync 後段才填好（WSL2 連線最長等 12 秒 + 掃描），
-        // 重新掃描期間也會先 Clear 再 await；而前端 Tab 全程可操作。這些空窗期存檔會把設定
-        // 覆寫成空清單，故清單內容不可信時就不動對應欄位，保留檔案裡的既有值
-        if (_dockerProjectsLoaded)
+        // 變更與序列化都在 SettingsService 的臨界區內完成，避免共用的 cached 物件在序列化途中被改
+        return _settingsService.UpdateAsync(settings =>
         {
-            settings.ImportedFolders = [.. Projects.Select(p => p.FolderPath)];
-            settings.RecentlyRemovedFolders = [.. RecentlyRemovedFolders];
-        }
+            // Docker 專案清單在 InitializeAsync 後段才填好（WSL2 連線最長等 12 秒 + 掃描），
+            // 重新掃描期間也會先 Clear 再 await；而前端 Tab 全程可操作。
+            // 這些空窗期集合並不完整，直接覆寫會把設定寫成空清單。
+            // 但也不能整個略過：使用者在空窗期匯入的項目會因此永遠存不進去，
+            // 故改為與檔案既有值聯集（空窗期集合只會多不會少）
+            if (_dockerProjectsLoaded)
+            {
+                settings.ImportedFolders = [.. Projects.Select(p => p.FolderPath)];
+                settings.RecentlyRemovedFolders = [.. RecentlyRemovedFolders];
+            }
+            else
+            {
+                settings.ImportedFolders = MergeFolders(settings.ImportedFolders, Projects.Select(p => p.FolderPath));
+            }
 
-        if (_frontendProjectsLoaded)
+            var frontendConfigs = InternalProjects.Concat(ExternalProjects).Select(p => p.ToConfig()).ToList();
+            if (_frontendProjectsLoaded)
+            {
+                settings.FrontendProjects = frontendConfigs;
+            }
+            else
+            {
+                var existingPaths = settings.FrontendProjects
+                    .Select(c => c.FolderPath)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                settings.FrontendProjects =
+                    [.. settings.FrontendProjects,
+                     .. frontendConfigs.Where(c => !existingPaths.Contains(c.FolderPath))];
+            }
+        });
+    }
+
+    private static List<string> MergeFolders(IEnumerable<string> persisted, IEnumerable<string> current)
+    {
+        var merged = new List<string>(persisted);
+        var seen = merged.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var folder in current)
         {
-            settings.FrontendProjects =
-                [.. InternalProjects.Concat(ExternalProjects).Select(p => p.ToConfig())];
+            if (seen.Add(folder)) merged.Add(folder);
         }
-
-        await _settingsService.SaveAsync(settings);
+        return merged;
     }
 
     private void UpdateCounts()

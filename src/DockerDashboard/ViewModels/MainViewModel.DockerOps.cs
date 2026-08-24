@@ -547,6 +547,19 @@ public partial class MainViewModel
         StatusMessage = $"已移除 {project.Name}";
     }
 
+    /// <summary>把掃描結果套進既有專案物件，保留參照身分（供 Rescan 使用）</summary>
+    private static void ApplyScanResult(DockerProject target, DockerProject scanned)
+    {
+        target.Name = scanned.Name;
+        target.IsGitRepo = scanned.IsGitRepo;
+        target.CurrentBranch = scanned.CurrentBranch;
+        target.IsDirty = scanned.IsDirty;
+
+        target.ComposeFiles.Clear();
+        foreach (var composeFile in scanned.ComposeFiles)
+            target.ComposeFiles.Add(composeFile);
+    }
+
     [RelayCommand]
     private async Task RescanProjectsAsync()
     {
@@ -577,28 +590,28 @@ public partial class MainViewModel
         var scannedByFolder = results.ToDictionary(
             p => p.FolderPath, StringComparer.OrdinalIgnoreCase);
 
-        var merged = new List<DockerProject>();
+        // 保留原物件參照、只更新其內容：換成新實例的話，掃描期間正在進行的「移除專案」
+        // 拿的是舊參照，Projects.Remove 會失敗，使用者要求刪掉的專案還留在清單上
+        var stale = new List<DockerProject>();
         foreach (var existing in Projects)
         {
-            var isOriginal = originals.Any(o => ReferenceEquals(o, existing));
-            if (!isOriginal)
-            {
-                merged.Add(existing); // 掃描期間新匯入，原樣保留
-                continue;
-            }
+            if (!originals.Any(o => ReferenceEquals(o, existing)))
+                continue; // 掃描期間新匯入，原樣保留
 
-            // 原有專案：有掃描結果就換成新的，沒有代表資料夾已失效 → 移除
             if (scannedByFolder.TryGetValue(existing.FolderPath, out var rescanned))
-                merged.Add(rescanned);
+            {
+                ApplyScanResult(existing, rescanned);
+                if (existing.ComposeFiles.Count == 0)
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {existing.Name} 未偵測到服務（docker compose config 可能失敗）");
+            }
+            else
+            {
+                stale.Add(existing); // 資料夾已失效
+            }
         }
 
-        Projects.Clear();
-        foreach (var project in merged)
-        {
-            Projects.Add(project);
-            if (project.ComposeFiles.Count == 0)
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {project.Name} 未偵測到服務（docker compose config 可能失敗）");
-        }
+        foreach (var project in stale)
+            Projects.Remove(project);
 
         _fastDevReload.ClearAll();
         // 先刷新容器狀態再還原旗標：新掃出的服務狀態是 Unknown，先還原會把在跑的 Fast Dev 旗標誤清
