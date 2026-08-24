@@ -1,0 +1,152 @@
+using System.IO;
+using DockerDashboard.Models;
+using DockerDashboard.Services;
+
+namespace DockerDashboard.Tests;
+
+public class FrontendProcessManagerTests
+{
+    private static FrontendProcessManager CreateManager() => new(new NodeProcessService());
+
+    private static FrontendProject Project(string devCommand) => new()
+    {
+        Name = "test",
+        FolderPath = Path.GetTempPath(),
+        DevCommand = devCommand,
+    };
+
+    private static async Task<FrontendStateEventArgs> WaitForStateAsync(
+        FrontendProcessManager manager, FrontendProcessState expected, TimeSpan timeout)
+    {
+        var tcs = new TaskCompletionSource<FrontendStateEventArgs>();
+        void Handler(object? _, FrontendStateEventArgs e)
+        {
+            if (e.State == expected) tcs.TrySetResult(e);
+        }
+
+        manager.StateChanged += Handler;
+        try
+        {
+            return await tcs.Task.WaitAsync(timeout);
+        }
+        finally
+        {
+            manager.StateChanged -= Handler;
+        }
+    }
+
+    [Fact]
+    public async Task StartDevAsync_行程自行結束_回報Crashed並清空追蹤()
+    {
+        var manager = CreateManager();
+        var project = Project("exit 0");
+
+        var crashed = WaitForStateAsync(manager, FrontendProcessState.Crashed, TimeSpan.FromSeconds(20));
+        var result = await manager.StartDevAsync(project, [project]);
+
+        Assert.IsType<StartResult.Started>(result);
+        var evt = await crashed;
+        Assert.Equal(0, evt.ExitCode);
+        Assert.False(manager.IsDevActive(project));
+    }
+
+    [Fact]
+    public async Task StartDevAsync_行程非零結束_帶出exitcode()
+    {
+        var manager = CreateManager();
+        var project = Project("exit 3");
+
+        var crashed = WaitForStateAsync(manager, FrontendProcessState.Crashed, TimeSpan.FromSeconds(20));
+        await manager.StartDevAsync(project, [project]);
+
+        var evt = await crashed;
+        Assert.Equal(3, evt.ExitCode);
+    }
+
+    [Fact]
+    public async Task StopDevAsync_使用者主動停止_回報Stopped而非Crashed()
+    {
+        var manager = CreateManager();
+        var project = Project("ping -n 60 127.0.0.1");
+
+        await manager.StartDevAsync(project, [project]);
+
+        var stopped = WaitForStateAsync(manager, FrontendProcessState.Stopped, TimeSpan.FromSeconds(20));
+        Assert.True(await manager.StopDevAsync(project));
+
+        var evt = await stopped;
+        Assert.Equal(FrontendProcessState.Stopped, evt.State);
+    }
+
+    [Fact]
+    public async Task StopDevAsync_長駐行程_確實停止並回傳true()
+    {
+        var manager = CreateManager();
+        var project = Project("ping -n 60 127.0.0.1");
+
+        await manager.StartDevAsync(project, [project]);
+        Assert.True(manager.IsDevActive(project));
+
+        Assert.True(await manager.StopDevAsync(project));
+        Assert.False(manager.IsDevActive(project));
+    }
+
+    [Fact]
+    public async Task StopDevAsync_重複呼叫_冪等且仍回傳true()
+    {
+        var manager = CreateManager();
+        var project = Project("ping -n 60 127.0.0.1");
+
+        await manager.StartDevAsync(project, [project]);
+        Assert.True(await manager.StopDevAsync(project));
+        Assert.True(await manager.StopDevAsync(project));
+    }
+
+    [Fact]
+    public async Task StartDevAsync_同組已有執行中_回報GroupOccupied且不啟動()
+    {
+        var manager = CreateManager();
+        var running = Project("ping -n 60 127.0.0.1");
+        var candidate = Project("ping -n 60 127.0.0.1");
+
+        await manager.StartDevAsync(running, [running, candidate]);
+
+        var result = await manager.StartDevAsync(candidate, [running, candidate]);
+
+        var occupied = Assert.IsType<StartResult.GroupOccupied>(result);
+        Assert.Same(running, occupied.Occupant);
+        Assert.False(manager.IsDevActive(candidate));
+
+        await manager.StopDevAsync(running);
+    }
+
+    [Fact]
+    public async Task StartDevAsync_同專案重複啟動_回報AlreadyRunning()
+    {
+        var manager = CreateManager();
+        var project = Project("ping -n 60 127.0.0.1");
+
+        await manager.StartDevAsync(project, [project]);
+        var result = await manager.StartDevAsync(project, [project]);
+
+        Assert.IsType<StartResult.AlreadyRunning>(result);
+        await manager.StopDevAsync(project);
+    }
+
+    [Fact]
+    public async Task OutputReceived_帶出行程輸出()
+    {
+        var manager = CreateManager();
+        var project = Project("echo hello-manager");
+
+        var tcs = new TaskCompletionSource<string>();
+        manager.OutputReceived += (_, e) =>
+        {
+            if (e.Line.Contains("hello-manager")) tcs.TrySetResult(e.Line);
+        };
+
+        await manager.StartDevAsync(project, [project]);
+
+        Assert.Contains("hello-manager", await tcs.Task.WaitAsync(TimeSpan.FromSeconds(20)));
+    }
+}
