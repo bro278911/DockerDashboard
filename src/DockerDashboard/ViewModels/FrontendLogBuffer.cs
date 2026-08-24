@@ -47,10 +47,24 @@ public sealed partial class FrontendLogBuffer : ObservableObject
         ScheduleFlush();
     }
 
+    internal int PendingCount => _pending.Count;
+
     // Application.Current 為 null（測試環境、或 App 已關閉）時安靜丟棄，比照 MainViewModel.AppendLog；
-    // 不同步寫入，避免背景執行緒直接改 Lines（ObservableCollection 非執行緒安全）
+    // 不同步寫入，避免背景執行緒直接改 Lines（ObservableCollection 非執行緒安全）。
+    // 丟棄必須真的清空佇列並歸零旗標，否則旗標會卡在「已排程」，之後每次 Append 都只入隊不排程，
+    // 待處理佇列無限成長
     private void ScheduleFlush()
-        => System.Windows.Application.Current?.Dispatcher.InvokeAsync(Flush);
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher == null)
+        {
+            while (_pending.TryDequeue(out _)) { }
+            Interlocked.Exchange(ref _flushScheduled, 0);
+            return;
+        }
+
+        dispatcher.InvokeAsync(Flush);
+    }
 
     private void Flush()
     {

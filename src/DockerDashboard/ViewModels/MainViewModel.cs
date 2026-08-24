@@ -32,8 +32,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ConcurrentQueue<string> _pendingLogQueue = new();
     private int _isLogFlushScheduled;
     private int _batchStartupParallelism = 3;
-    // Docker 專案清單是否已載入完成，供 SaveSettingsAsync 判斷可否覆寫該清單
-    private bool _dockerProjectsLoaded;
+    // 兩份清單各自的「內容是否可信」旗標，供 SaveSettingsAsync 判斷可否覆寫對應設定欄位。
+    // 載入中或重新掃描中集合會是空的或不完整，此時存檔會把設定寫成空清單
+    internal bool _dockerProjectsLoaded;
+    internal bool _frontendProjectsLoaded;
     private bool _dotnetSdkChecked;
     private bool _dotnetSdkAvailable;
     private CancellationTokenSource? _operationCts;
@@ -357,16 +359,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var settings = await _settingsService.LoadAsync();
 
         // Docker 專案清單在 InitializeAsync 後段才填好（WSL2 連線最長等 12 秒 + 掃描），
-        // 而前端 Tab 在這段期間已可操作。此時存檔會把還沒載入的清單覆寫成空的，
-        // 故未載入完成前不動這兩個欄位（前端清單在 InitializeAsync 最前面就載入，不受影響）
+        // 重新掃描期間也會先 Clear 再 await；而前端 Tab 全程可操作。這些空窗期存檔會把設定
+        // 覆寫成空清單，故清單內容不可信時就不動對應欄位，保留檔案裡的既有值
         if (_dockerProjectsLoaded)
         {
             settings.ImportedFolders = [.. Projects.Select(p => p.FolderPath)];
             settings.RecentlyRemovedFolders = [.. RecentlyRemovedFolders];
         }
 
-        settings.FrontendProjects =
-            [.. InternalProjects.Concat(ExternalProjects).Select(p => p.ToConfig())];
+        if (_frontendProjectsLoaded)
+        {
+            settings.FrontendProjects =
+                [.. InternalProjects.Concat(ExternalProjects).Select(p => p.ToConfig())];
+        }
+
         await _settingsService.SaveAsync(settings);
     }
 

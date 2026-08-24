@@ -551,16 +551,27 @@ public partial class MainViewModel
     private async Task RescanProjectsAsync()
     {
         var folders = Projects.Select(p => p.FolderPath).ToList();
+
+        // 清空到重建完成之間 Projects 不完整，期間若有其他命令（如前端專案增修）觸發存檔，
+        // 會把 ImportedFolders 寫成空清單，而本方法結束也不存檔，下次啟動就整批消失
+        _dockerProjectsLoaded = false;
         Projects.Clear();
 
-        var results = await Task.WhenAll(
-            folders.Where(Directory.Exists).Select(f => BuildProjectAsync(f, useCache: false)));
-
-        foreach (var project in results)
+        try
         {
-            Projects.Add(project);
-            if (project.ComposeFiles.Count == 0)
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {project.Name} 未偵測到服務（docker compose config 可能失敗）");
+            var results = await Task.WhenAll(
+                folders.Where(Directory.Exists).Select(f => BuildProjectAsync(f, useCache: false)));
+
+            foreach (var project in results)
+            {
+                Projects.Add(project);
+                if (project.ComposeFiles.Count == 0)
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {project.Name} 未偵測到服務（docker compose config 可能失敗）");
+            }
+        }
+        finally
+        {
+            _dockerProjectsLoaded = true;
         }
 
         _fastDevReload.ClearAll();

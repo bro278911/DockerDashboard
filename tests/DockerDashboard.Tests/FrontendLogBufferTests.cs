@@ -40,4 +40,18 @@ public class FrontendLogBufferTests
         Assert.Null(ex);
         Assert.Empty(buffer.Lines);
     }
+
+    // 回歸測試：沒有 dispatcher 時若只是「不排程」，_flushScheduled 會卡在已排程狀態、
+    // 待處理佇列無限成長（宣稱的安靜丟棄其實是安靜累積）。應真的丟棄。
+    [Fact]
+    public void Append_無WPFApplication時待處理佇列不會累積()
+    {
+        var buffer = new FrontendLogBuffer();
+
+        for (var i = 0; i < 1000; i++)
+            buffer.Append($"line-{i}");
+
+        Assert.Empty(buffer.Lines);
+        Assert.Equal(0, buffer.PendingCount);
+    }
 }

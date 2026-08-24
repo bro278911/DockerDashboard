@@ -29,6 +29,10 @@ public partial class MainViewModel
     private readonly Dictionary<FrontendProject, FrontendProcess> _devProcesses = [];
     private readonly Dictionary<FrontendProject, FrontendProcess> _oneShotProcesses = [];
 
+    // App 已進入關閉流程。啟動流程有 await 空窗（互斥確認、讀分支），若關閉發生在空窗期，
+    // StopAllFrontendProcesses 掃不到尚未註冊的行程，continuation 之後才啟動就會留下孤兒
+    private bool _frontendShutdown;
+
     public ObservableCollection<FrontendProject> InternalProjects { get; } = [];
     public ObservableCollection<FrontendProject> ExternalProjects { get; } = [];
     public FrontendLogBuffer InternalLog { get; } = new();
@@ -113,6 +117,7 @@ public partial class MainViewModel
     private async Task StartFrontendAsync(FrontendProject? project)
     {
         if (project == null || _devProcesses.ContainsKey(project) || project.IsStarting) return;
+        if (_frontendShutdown) return;
 
         project.IsStarting = true;
         try
@@ -161,6 +166,9 @@ public partial class MainViewModel
             }
         }
 
+        // 上面兩段都要 await，期間 App 可能已開始關閉；此時不該再起新行程
+        if (_frontendShutdown) return;
+
         ProcessStream stream;
         try
         {
@@ -176,10 +184,9 @@ public partial class MainViewModel
 
         // 上面的互斥確認、讀分支都要 await，期間專案可能已被 RemoveFrontendProjectCommand 移除
         // （該 command 未被本 command 的並行限制擋住）；此時立刻收掉剛起的孤兒行程，不註冊追蹤
-        if (!ProjectsOf(project.Group).Contains(project))
+        if (_frontendShutdown || !ProjectsOf(project.Group).Contains(project))
         {
-            stream.Kill(); // 先終止行程樹，再釋放 handle，否則會留下佔著 port 的孤兒 node
-            stream.Dispose();
+            await DiscardOrphanStreamAsync(project, stream);
             return;
         }
 
@@ -192,6 +199,30 @@ public partial class MainViewModel
         UpdateFrontendRunningLabels();
 
         ctx.ReaderTask = Task.Run(() => RunDevProcessAsync(project, ctx));
+    }
+
+    /// <summary>
+    /// 丟棄一個還沒註冊追蹤的行程（啟動途中專案被移除、或 App 已開始關閉）。
+    /// Kill 會吞掉例外，故等一小段時間確認整棵行程樹真的退出；沒退出就明確記錄，
+    /// 讓使用者知道有個佔著 port 的行程需要手動處理，而不是靜默漏掉
+    /// </summary>
+    private async Task DiscardOrphanStreamAsync(FrontendProject project, ProcessStream stream)
+    {
+        stream.Kill();
+        try
+        {
+            await stream.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch { }
+
+        if (!stream.HasExited)
+        {
+            AppendFrontendLog(project,
+                $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] 已放棄追蹤但行程未確認結束，可能仍佔用 port（{project.FolderPath}）");
+            StatusMessage = $"⚠ {project.Name} 有未終止的殘留行程，請手動確認";
+        }
+
+        stream.Dispose();
     }
 
     // 監控 dev server 直到結束。收尾放在 finally：任何非預期例外（pipe IOException、
@@ -234,6 +265,18 @@ public partial class MainViewModel
 
     private Task FinishDevProcessAsync(FrontendProject project, FrontendProcess ctx, int exitCode)
     {
+        // 行程沒真的結束（Kill 失敗、等待逾時）就保留追蹤與執行中狀態：
+        // 若照樣清掉，UI 會顯示已停止但 node 還活著佔著 port，使用者再也沒有停止它的入口
+        if (!ctx.Stream.HasExited)
+        {
+            return (Application.Current?.Dispatcher.InvokeAsync(() =>
+            {
+                AppendFrontendLog(project,
+                    $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] dev server 未確認結束，保留執行中狀態（可再次按停止）");
+                StatusMessage = $"⚠ {project.Name} 停止未完成，行程可能仍在執行";
+            }).Task ?? Task.CompletedTask);
+        }
+
         void Finish()
         {
             _devProcesses.Remove(project);
@@ -453,6 +496,7 @@ public partial class MainViewModel
             var project = FrontendProject.FromConfig(config);
             ProjectsOf(project.Group).Add(project);
         }
+        _frontendProjectsLoaded = true; // 此後 SaveSettingsAsync 才可覆寫前端專案清單
         _ = RefreshFrontendBranchesAsync();
     }
 
@@ -556,6 +600,17 @@ public partial class MainViewModel
     private Task FinishOneShotProcessAsync(
         FrontendProject project, FrontendProcess ctx, string label, int exitCode)
     {
+        // 同 dev server：行程未確認結束就保留 Busy 與追蹤，否則取消鈕消失、行程卻還在跑
+        if (!ctx.Stream.HasExited)
+        {
+            return (Application.Current?.Dispatcher.InvokeAsync(() =>
+            {
+                AppendFrontendLog(project,
+                    $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] {label} 未確認結束，保留執行中狀態（可再次按取消）");
+                StatusMessage = $"⚠ {project.Name} {label} 取消未完成，行程可能仍在執行";
+            }).Task ?? Task.CompletedTask);
+        }
+
         void Finish()
         {
             _oneShotProcesses.Remove(project);
@@ -614,6 +669,7 @@ public partial class MainViewModel
     /// <summary>App 關閉時整樹終止所有前端行程（Dispose 呼叫，執行於 UI 執行緒）</summary>
     internal void StopAllFrontendProcesses()
     {
+        _frontendShutdown = true; // 擋掉仍在 await 空窗中的啟動流程，避免關閉後才生出孤兒行程
         var all = _devProcesses.Values.Concat(_oneShotProcesses.Values).ToArray();
 
         // 不等 reader 收斂：本方法由 MainWindow.OnClosed → Dispose 在 UI 執行緒呼叫，而每個
