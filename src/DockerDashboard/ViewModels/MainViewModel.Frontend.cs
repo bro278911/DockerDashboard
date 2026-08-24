@@ -190,6 +190,98 @@ public partial class MainViewModel
             await ctx.ReaderTask; // 等舊行程完全結束再返回，互斥切換時避免 port 尚未釋放
     }
 
+    [RelayCommand]
+    private Task RunInstallAsync(FrontendProject? project)
+        => RunOneShotAsync(project, project?.InstallCommand, "install");
+
+    [RelayCommand]
+    private Task RunTestAsync(FrontendProject? project)
+        => RunOneShotAsync(project, project?.TestCommand, "vitest");
+
+    [RelayCommand]
+    private Task RunE2eAsync(FrontendProject? project)
+        => RunOneShotAsync(project, project?.E2eCommand, "e2e");
+
+    // 同專案一次只跑一個一次性指令；dev server 執行中仍可跑
+    private async Task RunOneShotAsync(FrontendProject? project, string? command, string label)
+    {
+        if (project == null || string.IsNullOrWhiteSpace(command)
+            || _oneShotProcesses.ContainsKey(project)) return;
+
+        ProcessStream stream;
+        try
+        {
+            stream = _nodeService.Start(project.FolderPath, command);
+        }
+        catch (Exception ex)
+        {
+            AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ❌ [{project.Name}] {label} 啟動失敗: {ex.Message}");
+            StatusMessage = $"❌ {project.Name} {label} 啟動失敗";
+            return;
+        }
+
+        var ctx = new FrontendProcess { Stream = stream, Cts = new CancellationTokenSource() };
+        _oneShotProcesses[project] = ctx;
+        project.Status = FrontendStatus.Busy;
+        AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ▶ [{project.Name}] {label}（{command}）");
+        StatusMessage = $"▶ {project.Name} 執行 {label} 中...";
+
+        ctx.ReaderTask = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.WhenAll(
+                    ReadFrontendStreamAsync(project, ctx.Stream.StandardOutput, ctx.Cts.Token),
+                    ReadFrontendStreamAsync(project, ctx.Stream.StandardError, ctx.Cts.Token));
+            }
+            catch (OperationCanceledException) { }
+
+            int exitCode;
+            try
+            {
+                await ctx.Stream.WaitForExitAsync(CancellationToken.None);
+                exitCode = ctx.Stream.ExitCode;
+            }
+            catch
+            {
+                exitCode = -1;
+            }
+
+            Application.Current?.Dispatcher.InvokeAsync(() =>
+            {
+                _oneShotProcesses.Remove(project);
+                // 狀態回復：dev server 還在跑 → Running；否則 Stopped
+                project.Status = project.IsDevRunning ? FrontendStatus.Running : FrontendStatus.Stopped;
+
+                if (ctx.UserStopped)
+                {
+                    AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ⏹ [{project.Name}] {label} 已取消");
+                    StatusMessage = $"⏹ {project.Name} {label} 已取消";
+                }
+                else
+                {
+                    var icon = exitCode == 0 ? "✅" : "❌";
+                    AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] {icon} [{project.Name}] {label} 結束（exit code {exitCode}）");
+                    StatusMessage = $"{icon} {project.Name} {label} 結束（exit code {exitCode}）";
+                }
+
+                ctx.Stream.Dispose();
+                ctx.Cts.Dispose();
+            });
+        });
+
+        await Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    private void CancelOneShot(FrontendProject? project)
+    {
+        if (project == null || !_oneShotProcesses.TryGetValue(project, out var ctx)) return;
+        ctx.UserStopped = true;
+        ctx.Cts.Cancel();
+        ctx.Stream.Kill(); // 整樹終止，收尾與狀態回復由 reader 收斂處理
+    }
+
     /// <summary>App 關閉時整樹終止所有前端行程（Dispose 呼叫）</summary>
     internal void StopAllFrontendProcesses()
     {
