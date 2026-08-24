@@ -46,7 +46,7 @@ public partial class MainViewModel
             ? _dockerCli.StartLogStream(containerName)
             : _dockerCli.StartComposeLogStream(service.WorkingDirectory, service.Name);
 
-        Task.Run(() => ReadLogStreamAsync(_logProcess, _logCts.Token));
+        Task.Run(() => ProcessOutputReader.ReadAllAsync(_logProcess, AppendLog, _logCts.Token));
         StatusMessage = $"正在串流 {service.Name} 的日誌...";
     }
 
@@ -78,27 +78,6 @@ public partial class MainViewModel
         var snapshot = BackendLog.Lines.ToArray();
         await File.WriteAllLinesAsync(dialog.FileName, snapshot);
         StatusMessage = $"日誌已匯出到 {dialog.FileName}";
-    }
-
-    private async Task ReadLogStreamAsync(ProcessStream stream, CancellationToken ct)
-    {
-        try
-        {
-            await Task.WhenAll(
-                ReadStreamAsync(stream.StandardOutput, ct),
-                ReadStreamAsync(stream.StandardError, ct));
-        }
-        catch (OperationCanceledException) { }
-    }
-
-    private async Task ReadStreamAsync(System.IO.StreamReader reader, CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            var line = await reader.ReadLineAsync(ct);
-            if (line == null) break;
-            AppendLog(line);
-        }
     }
 
     [RelayCommand]

@@ -203,9 +203,10 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
         var exitCode = -1;
         try
         {
-            await Task.WhenAll(
-                ReadAsync(project, entry.Stream.StandardOutput, entry.Cts.Token),
-                ReadAsync(project, entry.Stream.StandardError, entry.Cts.Token));
+            await ProcessOutputReader.ReadAllAsync(
+                entry.Stream,
+                line => OutputReceived?.Invoke(this, new FrontendOutputEventArgs(project, line)),
+                entry.Cts.Token);
         }
         catch { /* 讀取結束或被取消，交由下方等待行程結束 */ }
 
@@ -245,16 +246,6 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
         {
             entry.Stream.Dispose();
             entry.Cts.Dispose();
-        }
-    }
-
-    private async Task ReadAsync(FrontendProject project, System.IO.StreamReader reader, CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            var line = await reader.ReadLineAsync(ct);
-            if (line == null) break;
-            OutputReceived?.Invoke(this, new FrontendOutputEventArgs(project, line));
         }
     }
 
