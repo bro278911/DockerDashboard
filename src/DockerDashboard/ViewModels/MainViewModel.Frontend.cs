@@ -134,10 +134,20 @@ public partial class MainViewModel
                 e.Project.IsOneShotRunning = e.State == FrontendProcessState.Running;
                 if (e.State != FrontendProcessState.Running)
                 {
-                    var icon = e.ExitCode == 0 ? "✅" : "❌";
-                    AppendFrontendLog(e.Project,
-                        $"[{DateTime.Now:HH:mm:ss}] {icon} [{e.Project.Name}] {e.Label} 結束（exit code {e.ExitCode}）");
-                    StatusMessage = $"{icon} {e.Project.Name} {e.Label} 結束（exit code {e.ExitCode}）";
+                    // 一次性指令一律回報 Stopped，靠 UserStopped 區分「使用者取消」與「自然結束」，
+                    // 否則使用者取消會被誤顯示成依 exit code 判定的失敗訊息
+                    if (e.UserStopped)
+                    {
+                        AppendFrontendLog(e.Project, $"[{DateTime.Now:HH:mm:ss}] ⏹ [{e.Project.Name}] {e.Label} 已取消");
+                        StatusMessage = $"⏹ {e.Project.Name} {e.Label} 已取消";
+                    }
+                    else
+                    {
+                        var icon = e.ExitCode == 0 ? "✅" : "❌";
+                        AppendFrontendLog(e.Project,
+                            $"[{DateTime.Now:HH:mm:ss}] {icon} [{e.Project.Name}] {e.Label} 結束（exit code {e.ExitCode}）");
+                        StatusMessage = $"{icon} {e.Project.Name} {e.Label} 結束（exit code {e.ExitCode}）";
+                    }
                 }
             }
         });

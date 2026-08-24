@@ -32,7 +32,8 @@ public sealed class FrontendOutputEventArgs(FrontendProject project, string line
 }
 
 public sealed class FrontendStateEventArgs(
-    FrontendProject project, FrontendProcessKind kind, FrontendProcessState state, int exitCode, string label)
+    FrontendProject project, FrontendProcessKind kind, FrontendProcessState state, int exitCode, string label,
+    bool userStopped)
     : EventArgs
 {
     public FrontendProject Project { get; } = project;
@@ -40,4 +41,8 @@ public sealed class FrontendStateEventArgs(
     public FrontendProcessState State { get; } = state;
     public int ExitCode { get; } = exitCode;
     public string Label { get; } = label;
+
+    // 一次性指令一律回報 Stopped（見裁定：測試失敗不是崩潰），此旗標補回「是否使用者主動取消」
+    // 這個事實，讓 UI 決定要顯示「已取消」還是依 exit code 顯示成功/失敗訊息
+    public bool UserStopped { get; } = userStopped;
 }

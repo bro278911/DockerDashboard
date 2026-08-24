@@ -65,7 +65,7 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
         {
             try
             {
-                RaiseState(project, FrontendProcessKind.Dev, FrontendProcessState.Running, 0, started.Label);
+                RaiseState(project, FrontendProcessKind.Dev, FrontendProcessState.Running, 0, started.Label, false);
             }
             catch (Exception ex)
             {
@@ -101,7 +101,7 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
         {
             try
             {
-                RaiseState(project, FrontendProcessKind.OneShot, FrontendProcessState.Running, 0, started.Label);
+                RaiseState(project, FrontendProcessKind.OneShot, FrontendProcessState.Running, 0, started.Label, false);
             }
             catch (Exception ex)
             {
@@ -232,7 +232,7 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
 
         try
         {
-            RaiseState(project, kind, state, exitCode, entry.Label);
+            RaiseState(project, kind, state, exitCode, entry.Label, entry.UserStopped);
         }
         catch (Exception ex)
         {
@@ -259,6 +259,7 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
     }
 
     private void RaiseState(
-        FrontendProject project, FrontendProcessKind kind, FrontendProcessState state, int exitCode, string label)
-        => StateChanged?.Invoke(this, new FrontendStateEventArgs(project, kind, state, exitCode, label));
+        FrontendProject project, FrontendProcessKind kind, FrontendProcessState state, int exitCode, string label,
+        bool userStopped)
+        => StateChanged?.Invoke(this, new FrontendStateEventArgs(project, kind, state, exitCode, label, userStopped));
 }

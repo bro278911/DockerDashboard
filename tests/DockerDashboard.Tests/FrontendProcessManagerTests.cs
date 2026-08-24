@@ -201,6 +201,36 @@ public class FrontendProcessManagerTests
         await manager.StopDevAsync(project);
     }
 
+    // 釘住：一次性指令一律回報 Stopped，但被使用者取消時 UserStopped 必須為 true，
+    // 讓 UI 能區分「使用者取消」與「自然結束」（否則取消會被誤顯示成失敗訊息）
+    [Fact]
+    public async Task CancelOneShotAsync_使用者主動取消_UserStopped為true()
+    {
+        var manager = CreateManager();
+        var project = Project("ping -n 60 127.0.0.1");
+
+        var stopped = WaitForStateAsync(manager, FrontendProcessState.Stopped, TimeSpan.FromSeconds(20));
+        await manager.RunOneShotAsync(project, "ping -n 60 127.0.0.1", "install");
+
+        Assert.True(await manager.CancelOneShotAsync(project));
+
+        var evt = await stopped;
+        Assert.True(evt.UserStopped);
+    }
+
+    [Fact]
+    public async Task RunOneShotAsync_行程自然結束_UserStopped為false()
+    {
+        var manager = CreateManager();
+        var project = Project("exit 0");
+
+        var stopped = WaitForStateAsync(manager, FrontendProcessState.Stopped, TimeSpan.FromSeconds(20));
+        await manager.RunOneShotAsync(project, "exit 0", "install");
+
+        var evt = await stopped;
+        Assert.False(evt.UserStopped);
+    }
+
     [Fact]
     public async Task RunOneShotAsync_同專案已有一次性指令_回報AlreadyRunning()
     {
