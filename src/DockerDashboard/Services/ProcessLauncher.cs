@@ -79,7 +79,10 @@ public static class ProcessLauncher
                 Marshal.StructureToPtr(info, ptr, fDeleteOld: false);
                 if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, ptr, (uint)size))
                 {
+                    // 設定失敗時關閉孤兒 handle。此處不違反「Job handle 永不關閉」的約束：
+                    // 該約束針對「成功建立且實際在使用」的 job；設定失敗的 handle 是未使用的孤兒，應主動回收
                     Debug.WriteLine($"[ProcessLauncher] 設定 Job 失敗: {Marshal.GetLastWin32Error()}");
+                    CloseHandle(job);
                     return IntPtr.Zero;
                 }
             }
@@ -114,6 +117,10 @@ public static class ProcessLauncher
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsProcessInJob(
         IntPtr processHandle, IntPtr jobHandle, [MarshalAs(UnmanagedType.Bool)] out bool result);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr hObject);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
