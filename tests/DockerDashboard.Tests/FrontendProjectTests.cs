@@ -111,4 +111,14 @@ public class FrontendProjectTests
 
         Assert.Equal(expected, project.IsIdle);
     }
+
+    // 啟動流程的 await 空窗期（互斥確認、讀分支）IsDevRunning 尚未 true，
+    // 若不算入 IsIdle，使用者可在這段期間改組別造成互斥與 log 歸屬錯亂
+    [Fact]
+    public void IsIdle_啟動途中為false()
+    {
+        var project = new FrontendProject { IsStarting = true };
+
+        Assert.False(project.IsIdle);
+    }
 }

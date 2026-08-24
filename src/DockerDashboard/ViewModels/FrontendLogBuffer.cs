@@ -17,7 +17,7 @@ public sealed partial class FrontendLogBuffer : ObservableObject
 
     private ICollectionView? _view;
 
-    public ObservableCollection<string> Lines { get; } = [];
+    public BulkObservableCollection<string> Lines { get; } = [];
 
     // 延遲建立：XAML 綁定時（UI 執行緒）才產生 view，單元測試不必起 WPF Application
     public ICollectionView View
@@ -71,11 +71,9 @@ public sealed partial class FrontendLogBuffer : ObservableObject
     {
         Lines.Add(message);
         if (Lines.Count <= 5000) return;
-        // Skip(500) 後 Clear + re-add：與 MainViewModel.AppendLogLine 同款裁剪策略
-        var kept = Lines.Skip(500).ToArray();
-        Lines.Clear();
-        foreach (var line in kept)
-            Lines.Add(line);
+        // 裁剪走 ReplaceAll：只發一次 Reset 通知。逐筆 re-add 會在高輸出量的 dev server 下
+        // 每次裁剪產生約 4500 次集合通知與過濾判斷，造成週期性卡頓
+        Lines.ReplaceAll(Lines.Skip(500).ToArray());
     }
 
     // 一併清掉排隊中的行，否則按下清除後、下一次 Flush 會立刻把當時已排隊的內容補回來，

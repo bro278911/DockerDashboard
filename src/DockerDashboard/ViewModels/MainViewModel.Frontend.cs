@@ -112,8 +112,21 @@ public partial class MainViewModel
     [RelayCommand]
     private async Task StartFrontendAsync(FrontendProject? project)
     {
-        if (project == null || _devProcesses.ContainsKey(project)) return;
+        if (project == null || _devProcesses.ContainsKey(project) || project.IsStarting) return;
 
+        project.IsStarting = true;
+        try
+        {
+            await StartFrontendCoreAsync(project);
+        }
+        finally
+        {
+            project.IsStarting = false;
+        }
+    }
+
+    private async Task StartFrontendCoreAsync(FrontendProject project)
+    {
         // 同組互斥：已有執行中專案時先確認再關舊起新
         var running = FindRunningInGroup(ProjectsOf(project.Group), project);
         if (running != null)
@@ -198,7 +211,10 @@ public partial class MainViewModel
 
             try
             {
-                await ctx.Stream.WaitForExitAsync(CancellationToken.None);
+                // 有界等待：Kill 因權限或殭屍子行程失敗時，無限等待會讓 finally 永遠跑不到，
+                // 專案就永久卡在「執行中」再也起不動
+                await ctx.Stream.WaitForExitAsync(CancellationToken.None)
+                    .WaitAsync(TimeSpan.FromSeconds(15));
                 exitCode = ctx.Stream.ExitCode;
             }
             catch
@@ -371,6 +387,14 @@ public partial class MainViewModel
         };
         if (editor.ShowDialog() != true) return;
 
+        // 再驗一次：modal dialog 的巢狀訊息迴圈會讓 UI 執行緒繼續處理其他工作，
+        // 開啟期間專案可能已被啟動（啟動流程的 await continuation 在這裡完成）
+        if (!project.IsIdle)
+        {
+            StatusMessage = $"⚠ {project.Name} 已在執行中，編輯未套用";
+            return;
+        }
+
         ApplyFrontendEdit(project, draft.ToConfig(), InternalProjects, ExternalProjects);
         await SaveSettingsAsync();
         StatusMessage = $"✅ 已更新前端專案 {project.Name}";
@@ -404,9 +428,15 @@ public partial class MainViewModel
     {
         if (project == null) return;
 
-        // 執行中先停止再移除（各自的 TryGetValue 守衛已處理「沒在跑」情況，不必外層再查表）
-        await CancelOneShotAsync(project);
-        await StopFrontendAsync(project);
+        // 執行中先停止再移除（各自的 TryGetValue 守衛已處理「沒在跑」情況，不必外層再查表）。
+        // 任一沒確認結束就不移除：否則行程還活著卻從 UI 與設定消失，使用者再也沒有停止它的入口
+        var oneShotStopped = await CancelOneShotAsync(project);
+        var devStopped = await StopFrontendAsync(project);
+        if (!oneShotStopped || !devStopped)
+        {
+            StatusMessage = $"⚠ {project.Name} 的行程未確認結束，已保留專案（可再次嘗試停止）";
+            return;
+        }
 
         ProjectsOf(project.Group).Remove(project);
         await SaveSettingsAsync();
@@ -502,7 +532,10 @@ public partial class MainViewModel
 
             try
             {
-                await ctx.Stream.WaitForExitAsync(CancellationToken.None);
+                // 有界等待：Kill 因權限或殭屍子行程失敗時，無限等待會讓 finally 永遠跑不到，
+                // 專案就永久卡在「執行中」再也起不動
+                await ctx.Stream.WaitForExitAsync(CancellationToken.None)
+                    .WaitAsync(TimeSpan.FromSeconds(15));
                 exitCode = ctx.Stream.ExitCode;
             }
             catch
@@ -555,24 +588,26 @@ public partial class MainViewModel
         return dispatcher.InvokeAsync(Finish).Task;
     }
 
+    /// <returns>行程確實已結束為 true；逾時或發生例外為 false</returns>
     [RelayCommand]
-    private async Task CancelOneShotAsync(FrontendProject? project)
+    private async Task<bool> CancelOneShotAsync(FrontendProject? project)
     {
-        if (project == null || !_oneShotProcesses.TryGetValue(project, out var ctx)) return;
+        if (project == null || !_oneShotProcesses.TryGetValue(project, out var ctx)) return true;
 
         ctx.UserStopped = true;
         ctx.Cts.Cancel();
         ctx.Stream.Kill(); // 整樹終止，收尾與狀態回復由 reader 收斂處理
-        if (ctx.ReaderTask != null)
+        if (ctx.ReaderTask == null) return true;
+
+        try
         {
-            try
-            {
-                await ctx.ReaderTask.WaitAsync(TimeSpan.FromSeconds(10));
-            }
-            catch (Exception ex)
-            {
-                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] 取消逾時或發生例外: {ex.Message}");
-            }
+            await ctx.ReaderTask.WaitAsync(TimeSpan.FromSeconds(10));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] 取消逾時或發生例外: {ex.Message}");
+            return false;
         }
     }
 
