@@ -552,26 +552,28 @@ public partial class MainViewModel
     {
         var folders = Projects.Select(p => p.FolderPath).ToList();
 
-        // 清空到重建完成之間 Projects 不完整，期間若有其他命令（如前端專案增修）觸發存檔，
-        // 會把 ImportedFolders 寫成空清單，而本方法結束也不存檔，下次啟動就整批消失
-        _dockerProjectsLoaded = false;
-        Projects.Clear();
-
+        // 先在暫存集合掃描完，成功才整批換進 Projects：直接 Clear 再 await 的話，
+        // 期間其他命令（如前端專案增修）觸發存檔會把 ImportedFolders 寫成空清單；
+        // 掃描中途拋例外更會讓 Projects 永久停在空的狀態
+        List<DockerProject> results;
         try
         {
-            var results = await Task.WhenAll(
-                folders.Where(Directory.Exists).Select(f => BuildProjectAsync(f, useCache: false)));
-
-            foreach (var project in results)
-            {
-                Projects.Add(project);
-                if (project.ComposeFiles.Count == 0)
-                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {project.Name} 未偵測到服務（docker compose config 可能失敗）");
-            }
+            results = [.. await Task.WhenAll(
+                folders.Where(Directory.Exists).Select(f => BuildProjectAsync(f, useCache: false)))];
         }
-        finally
+        catch (Exception ex)
         {
-            _dockerProjectsLoaded = true;
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ 重新掃描失敗，保留原有專案清單: {ex.Message}");
+            StatusMessage = "⚠ 重新掃描失敗";
+            return;
+        }
+
+        Projects.Clear();
+        foreach (var project in results)
+        {
+            Projects.Add(project);
+            if (project.ComposeFiles.Count == 0)
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {project.Name} 未偵測到服務（docker compose config 可能失敗）");
         }
 
         _fastDevReload.ClearAll();

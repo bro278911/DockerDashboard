@@ -211,18 +211,26 @@ public partial class MainViewModel
     /// </summary>
     private async Task DiscardOrphanStreamAsync(FrontendProject project, ProcessStream stream)
     {
-        stream.Kill();
-        try
+        // 重試兩輪再放棄，並在放棄前把 PID 寫進 log——handle 一旦 Dispose 就再也沒有 UI 入口，
+        // 至少讓使用者拿得到可據以手動終止的資訊
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            await stream.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
-        }
-        catch { }
+            var pid = stream.Id;
+            stream.Kill();
+            try
+            {
+                await stream.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch { }
 
-        if (!stream.HasExited)
-        {
-            AppendFrontendLog(project,
-                $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] 已放棄追蹤但行程未確認結束，可能仍佔用 port（{project.FolderPath}）");
-            StatusMessage = $"⚠ {project.Name} 有未終止的殘留行程，請手動確認";
+            if (stream.HasExited) break;
+
+            if (attempt == 1)
+            {
+                AppendFrontendLog(project,
+                    $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] 已放棄追蹤但行程未結束（PID {pid?.ToString() ?? "?"}），可能仍佔用 port：{project.FolderPath}");
+                StatusMessage = $"⚠ {project.Name} 有未終止的殘留行程（PID {pid?.ToString() ?? "?"}），請手動確認";
+            }
         }
 
         stream.Dispose();
@@ -243,18 +251,7 @@ public partial class MainViewModel
             }
             catch (OperationCanceledException) { }
 
-            try
-            {
-                // 有界等待：Kill 因權限或殭屍子行程失敗時，無限等待會讓 finally 永遠跑不到，
-                // 專案就永久卡在「執行中」再也起不動
-                await ctx.Stream.WaitForExitAsync(CancellationToken.None)
-                    .WaitAsync(TimeSpan.FromSeconds(15));
-                exitCode = ctx.Stream.ExitCode;
-            }
-            catch
-            {
-                exitCode = -1;
-            }
+            exitCode = await WaitForFrontendExitAsync(project, ctx, "dev server");
         }
         catch (Exception ex)
         {
@@ -268,9 +265,9 @@ public partial class MainViewModel
 
     private Task FinishDevProcessAsync(FrontendProject project, FrontendProcess ctx, int exitCode)
     {
-        // 行程沒真的結束（Kill 失敗、等待逾時）就保留追蹤與執行中狀態：
-        // 若照樣清掉，UI 會顯示已停止但 node 還活著佔著 port，使用者再也沒有停止它的入口
-        if (!ctx.Stream.HasExited)
+        // 行程未確認結束就保留追蹤與執行中狀態，讓停止鈕留著可再試（正常路徑不會走到這裡：
+        // WaitForFrontendExitAsync 會一直等到行程真的結束；此處只擋監控任務提早退出的殘餘情況）
+        if (!ctx.Stream.HasExited && !_frontendShutdown)
         {
             return (Application.Current?.Dispatcher.InvokeAsync(() =>
             {
@@ -322,6 +319,38 @@ public partial class MainViewModel
         return dispatcher.InvokeAsync(Finish).Task;
     }
 
+    /// <summary>
+    /// 等到行程真的結束為止：每輪等 15 秒，逾時就再送一次整樹終止並提示，不放棄追蹤。
+    /// 早期版本逾時即放棄，收尾照跑，結果 UI 顯示已停止但 node 還活著佔著 port；
+    /// 一直等下去則 ReaderTask 保持未完成，停止操作會回報失敗、按鈕留著可重試，狀態才誠實
+    /// </summary>
+    private async Task<int> WaitForFrontendExitAsync(
+        FrontendProject project, FrontendProcess ctx, string label)
+    {
+        while (true)
+        {
+            try
+            {
+                await ctx.Stream.WaitForExitAsync(CancellationToken.None)
+                    .WaitAsync(TimeSpan.FromSeconds(15));
+                return ctx.Stream.ExitCode;
+            }
+            catch (TimeoutException)
+            {
+                // App 關閉中就不再纏鬥，交由 OS 回收，避免拖住關閉流程
+                if (_frontendShutdown || ctx.Stream.HasExited) return -1;
+
+                AppendFrontendLog(project,
+                    $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] {label} 尚未結束（PID {ctx.Stream.Id?.ToString() ?? "?"}），重試終止中…");
+                ctx.Stream.Kill();
+            }
+            catch
+            {
+                return -1;
+            }
+        }
+    }
+
     private async Task ReadFrontendStreamAsync(
         FrontendProject project, System.IO.StreamReader reader, CancellationToken ct)
     {
@@ -349,13 +378,21 @@ public partial class MainViewModel
         try
         {
             await ctx.ReaderTask.WaitAsync(TimeSpan.FromSeconds(10));
-            return true;
         }
         catch (Exception ex)
         {
             AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] 停止逾時或發生例外: {ex.Message}");
-            return false;
         }
+
+        // 成敗一律以行程實際狀態為準，不能只看 ReaderTask 有沒有跑完：
+        // 監控任務可能因例外提早結束而行程還活著，回報成功會讓呼叫端誤以為 port 已釋放
+        if (!ctx.Stream.HasExited) return false;
+
+        // 行程其實已結束但追蹤還在（監控任務提早退出時會如此）→ 補跑收尾自我修復
+        if (_devProcesses.ContainsKey(project))
+            await FinishDevProcessAsync(project, ctx, -1);
+
+        return true;
     }
 
     [RelayCommand]
@@ -577,18 +614,7 @@ public partial class MainViewModel
             }
             catch (OperationCanceledException) { }
 
-            try
-            {
-                // 有界等待：Kill 因權限或殭屍子行程失敗時，無限等待會讓 finally 永遠跑不到，
-                // 專案就永久卡在「執行中」再也起不動
-                await ctx.Stream.WaitForExitAsync(CancellationToken.None)
-                    .WaitAsync(TimeSpan.FromSeconds(15));
-                exitCode = ctx.Stream.ExitCode;
-            }
-            catch
-            {
-                exitCode = -1;
-            }
+            exitCode = await WaitForFrontendExitAsync(project, ctx, label);
         }
         catch (Exception ex)
         {
@@ -604,7 +630,7 @@ public partial class MainViewModel
         FrontendProject project, FrontendProcess ctx, string label, int exitCode)
     {
         // 同 dev server：行程未確認結束就保留 Busy 與追蹤，否則取消鈕消失、行程卻還在跑
-        if (!ctx.Stream.HasExited)
+        if (!ctx.Stream.HasExited && !_frontendShutdown)
         {
             return (Application.Current?.Dispatcher.InvokeAsync(() =>
             {
@@ -660,13 +686,18 @@ public partial class MainViewModel
         try
         {
             await ctx.ReaderTask.WaitAsync(TimeSpan.FromSeconds(10));
-            return true;
         }
         catch (Exception ex)
         {
             AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] 取消逾時或發生例外: {ex.Message}");
-            return false;
         }
+
+        if (!ctx.Stream.HasExited) return false;
+
+        if (_oneShotProcesses.ContainsKey(project))
+            await FinishOneShotProcessAsync(project, ctx, "指令", -1);
+
+        return true;
     }
 
     /// <summary>App 關閉時整樹終止所有前端行程（Dispose 呼叫，執行於 UI 執行緒）</summary>

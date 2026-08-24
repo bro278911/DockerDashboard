@@ -58,8 +58,14 @@ public sealed partial class FrontendLogBuffer : ObservableObject
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher == null)
         {
-            while (_pending.TryDequeue(out _)) { }
-            Interlocked.Exchange(ref _flushScheduled, 0);
+            // 清空與歸零之間仍可能有人入隊，故比照 Flush 的交握：歸零後再檢查一次，
+            // 搶回處理權就再清一輪，直到「旗標為 0 時佇列確實是空的」
+            do
+            {
+                while (_pending.TryDequeue(out _)) { }
+                Interlocked.Exchange(ref _flushScheduled, 0);
+            }
+            while (!_pending.IsEmpty && Interlocked.Exchange(ref _flushScheduled, 1) == 0);
             return;
         }
 

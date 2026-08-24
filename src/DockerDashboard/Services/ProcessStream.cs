@@ -13,7 +13,10 @@ public sealed class ProcessStream : IDisposable
     public StreamReader StandardError => _process.StandardError;
     public int ExitCode => _process.ExitCode;
 
-    /// <summary>行程是否已結束。已 Dispose 或無法查詢時回傳 true（視同不必再處理）</summary>
+    /// <summary>
+    /// 行程是否已結束。已 Dispose 視同結束；查詢失敗時保守回傳 false，
+    /// 讓呼叫端把「無法確認」當成「可能還活著」而繼續追蹤，不要誤放生
+    /// </summary>
     public bool HasExited
     {
         get
@@ -22,7 +25,21 @@ public sealed class ProcessStream : IDisposable
             {
                 if (_disposed) return true;
                 try { return _process.HasExited; }
-                catch { return true; }
+                catch { return false; }
+            }
+        }
+    }
+
+    /// <summary>行程 PID；已 Dispose 或查詢失敗時回傳 null（僅供診斷訊息使用）</summary>
+    public int? Id
+    {
+        get
+        {
+            lock (_gate)
+            {
+                if (_disposed) return null;
+                try { return _process.Id; }
+                catch { return null; }
             }
         }
     }
