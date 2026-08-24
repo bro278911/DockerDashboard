@@ -61,7 +61,15 @@ public partial class FrontendProject : ObservableObject
     [NotifyPropertyChangedFor(nameof(DisplayStatus))]
     private bool _isOneShotRunning;
 
-    public string FolderName => System.IO.Path.GetFileName(FolderPath.TrimEnd('\\', '/'));
+    // 磁碟根目錄（如 D:\）GetFileName 回傳空字串，回退顯示完整路徑避免留白
+    public string FolderName
+    {
+        get
+        {
+            var name = System.IO.Path.GetFileName(FolderPath.TrimEnd('\\', '/'));
+            return string.IsNullOrEmpty(name) ? FolderPath : name;
+        }
+    }
     public bool IsDevStopped => !IsDevRunning;
     public bool IsBusy => IsOneShotRunning;
     public bool IsNotBusy => !IsOneShotRunning;

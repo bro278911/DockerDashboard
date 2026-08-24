@@ -47,14 +47,10 @@ public sealed partial class FrontendLogBuffer : ObservableObject
         ScheduleFlush();
     }
 
+    // Application.Current 為 null（測試環境、或 App 已關閉）時安靜丟棄，比照 MainViewModel.AppendLog；
+    // 不同步寫入，避免背景執行緒直接改 Lines（ObservableCollection 非執行緒安全）
     private void ScheduleFlush()
-    {
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher != null)
-            dispatcher.InvokeAsync(Flush);
-        else
-            Flush(); // 測試環境無 WPF Application，同步寫入
-    }
+        => System.Windows.Application.Current?.Dispatcher.InvokeAsync(Flush);
 
     private void Flush()
     {

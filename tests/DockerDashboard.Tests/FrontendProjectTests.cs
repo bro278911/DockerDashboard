@@ -49,6 +49,14 @@ public class FrontendProjectTests
         Assert.Equal("Meso-feat-x", project.FolderName);
     }
 
+    // 邊界測試：磁碟根目錄 GetFileName 回傳空字串，FolderName 不該顯示空白
+    [Fact]
+    public void FolderName_磁碟根目錄時回退顯示完整路徑()
+    {
+        var project = new FrontendProject { FolderPath = @"D:\" };
+        Assert.Equal(@"D:\", project.FolderName);
+    }
+
     // 回歸測試：dev server 崩潰時，一次性指令（install/vitest/e2e）仍在跑，Status 不該被一次性指令的收尾覆寫
     [Fact]
     public void Status_不受一次性指令收尾影響_dev崩潰後仍維持Crashed()
