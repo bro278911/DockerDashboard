@@ -214,8 +214,13 @@ public class FrontendProcessManagerTests
         await manager.CancelOneShotAsync(project);
     }
 
+    // 本測試只驗證 StopAll 自身的職責：取得追蹤快照、清空 _entries、對每個 entry 走過終止路徑、
+    // 且事後 manager 沒被卡死（同專案可以重新 StartDevAsync）。StopAll 對每個 entry 做的正是
+    // Stream.Dispose()，「Dispose 會真的終止仍在執行的行程」已由 NodeProcessServiceTests 的
+    // Dispose_應終止仍在執行的行程 這條回歸測試在單元層釘住；「App 行程死亡時子孫行程連帶回收」
+    // 則是 ProcessLauncher 的 Job Object 機制保證，已實機驗證過，兩者都不必在這裡重複驗證
     [Fact]
-    public async Task StopAll_終止全部行程並清空追蹤()
+    public async Task StopAll_清空追蹤且事後可重新啟動()
     {
         var manager = CreateManager();
         var a = Project("ping -n 60 127.0.0.1");
@@ -228,5 +233,10 @@ public class FrontendProcessManagerTests
 
         Assert.False(manager.IsDevActive(a));
         Assert.False(manager.IsOneShotActive(b));
+
+        // manager 沒被 StopAll 弄壞：同一個專案能再次成功啟動
+        var restart = await manager.StartDevAsync(a, [a]);
+        Assert.IsType<StartResult.Started>(restart);
+        await manager.StopDevAsync(a);
     }
 }
