@@ -18,13 +18,77 @@
     <converters:StatusToIconConverter x:Key="StatusToIconConverter" />
     <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
     <converters:BindingProxy x:Key="Proxy" Data="{Binding}" />
+    <converters:FrontendStatusToColorConverter x:Key="FrontendStatusToColorConverter" />
+
+    <!-- 前端專案列（內部/外部兩組共用） -->
+    <DataTemplate x:Key="FrontendProjectTemplate">
+        <materialDesign:Card Margin="4" Padding="8">
+            <StackPanel>
+                <DockPanel>
+                    <TextBlock Text="●" FontSize="12" VerticalAlignment="Center"
+                               Foreground="{Binding Status, Converter={StaticResource FrontendStatusToColorConverter}}" />
+                    <TextBlock Text="{Binding Name}" FontWeight="Bold" Margin="6,0,0,0"
+                               VerticalAlignment="Center" />
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding CurrentBranch}"
+                               Foreground="#1E88E5" FontSize="11" VerticalAlignment="Center"
+                               HorizontalAlignment="Right" />
+                </DockPanel>
+                <TextBlock Text="{Binding FolderName}" FontSize="11" Foreground="Gray"
+                           Margin="18,2,0,4" />
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="啟動" Height="26" Padding="8,0"
+                            Style="{StaticResource MaterialDesignFlatButton}"
+                            Visibility="{Binding IsDevStopped, Converter={StaticResource BoolToVisibilityConverter}}"
+                            Command="{Binding DataContext.StartFrontendCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding}" />
+                    <Button Content="停止" Height="26" Padding="8,0"
+                            Style="{StaticResource MaterialDesignFlatButton}"
+                            Visibility="{Binding IsDevRunning, Converter={StaticResource BoolToVisibilityConverter}}"
+                            Command="{Binding DataContext.StopFrontendCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding}" />
+                    <Button Content="install" Height="26" Padding="8,0"
+                            Style="{StaticResource MaterialDesignFlatButton}"
+                            IsEnabled="{Binding IsNotBusy}"
+                            Command="{Binding DataContext.RunInstallCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding}" />
+                    <Button Content="vitest" Height="26" Padding="8,0"
+                            Style="{StaticResource MaterialDesignFlatButton}"
+                            IsEnabled="{Binding IsNotBusy}"
+                            Command="{Binding DataContext.RunTestCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding}" />
+                    <Button Content="e2e" Height="26" Padding="8,0"
+                            Style="{StaticResource MaterialDesignFlatButton}"
+                            IsEnabled="{Binding IsNotBusy}"
+                            Command="{Binding DataContext.RunE2eCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding}" />
+                    <Button Content="取消" Height="26" Padding="8,0" Foreground="#F44336"
+                            Style="{StaticResource MaterialDesignFlatButton}"
+                            Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibilityConverter}}"
+                            Command="{Binding DataContext.CancelOneShotCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding}" />
+                    <Button Content="移除" Height="26" Padding="8,0" Foreground="Gray"
+                            Style="{StaticResource MaterialDesignFlatButton}"
+                            Command="{Binding DataContext.RemoveFrontendProjectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding}" />
+                </StackPanel>
+            </StackPanel>
+        </materialDesign:Card>
+    </DataTemplate>
     </Window.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TabControl Grid.Row="0"
+                    materialDesign:ColorZoneAssist.Mode="PrimaryMid">
+        <TabItem Header="後端 (Docker)">
+        <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
         <!-- 工具列 -->
@@ -543,9 +607,107 @@
                 </materialDesign:Card>
             </Grid>
         </Grid>
+        </Grid>
+        </TabItem>
+
+        <TabItem Header="前端 (Vue)">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- 前端工具列 -->
+                <materialDesign:Card Grid.Row="0" Margin="8,8,8,4" Padding="8">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Style="{StaticResource MaterialDesignFlatButton}"
+                                Command="{Binding AddFrontendProjectCommand}"
+                                ToolTip="加入前端專案">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="FolderPlus" VerticalAlignment="Center" />
+                                <TextBlock Text="加入前端專案" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </materialDesign:Card>
+
+                <Grid Grid.Row="1" Margin="8,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="380" />
+                        <ColumnDefinition Width="4" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 左：專案清單（兩固定群組） -->
+                    <materialDesign:Card Grid.Column="0" Padding="0">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock Text="內部 (Meso)" Margin="12,10,12,4"
+                                           Style="{StaticResource MaterialDesignSubtitle1TextBlock}" />
+                                <ItemsControl ItemsSource="{Binding InternalProjects}"
+                                              ItemTemplate="{StaticResource FrontendProjectTemplate}"
+                                              Margin="4,0" />
+                                <TextBlock Text="外部 (Strato)" Margin="12,10,12,4"
+                                           Style="{StaticResource MaterialDesignSubtitle1TextBlock}" />
+                                <ItemsControl ItemsSource="{Binding ExternalProjects}"
+                                              ItemTemplate="{StaticResource FrontendProjectTemplate}"
+                                              Margin="4,0" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </materialDesign:Card>
+
+                    <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" />
+
+                    <!-- 右：log 區（子 Tab 內部/外部） -->
+                    <TabControl Grid.Column="2">
+                        <TabItem Header="內部 log">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <DockPanel Grid.Row="0" Margin="8,6">
+                                    <TextBlock Text="{Binding InternalRunningLabel}"
+                                               VerticalAlignment="Center" FontWeight="Bold" />
+                                    <TextBox DockPanel.Dock="Right" Width="200" HorizontalAlignment="Right"
+                                             materialDesign:HintAssist.Hint="過濾關鍵字"
+                                             materialDesign:TextFieldAssist.HasClearButton="True"
+                                             Text="{Binding InternalLog.Filter, UpdateSourceTrigger=PropertyChanged}" />
+                                </DockPanel>
+                                <ListBox Grid.Row="1" ItemsSource="{Binding InternalLog.View}"
+                                         FontFamily="Consolas, Courier New" FontSize="12"
+                                         VirtualizingStackPanel.IsVirtualizing="True"
+                                         VirtualizingStackPanel.VirtualizationMode="Recycling" />
+                            </Grid>
+                        </TabItem>
+                        <TabItem Header="外部 log">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <DockPanel Grid.Row="0" Margin="8,6">
+                                    <TextBlock Text="{Binding ExternalRunningLabel}"
+                                               VerticalAlignment="Center" FontWeight="Bold" />
+                                    <TextBox DockPanel.Dock="Right" Width="200" HorizontalAlignment="Right"
+                                             materialDesign:HintAssist.Hint="過濾關鍵字"
+                                             materialDesign:TextFieldAssist.HasClearButton="True"
+                                             Text="{Binding ExternalLog.Filter, UpdateSourceTrigger=PropertyChanged}" />
+                                </DockPanel>
+                                <ListBox Grid.Row="1" ItemsSource="{Binding ExternalLog.View}"
+                                         FontFamily="Consolas, Courier New" FontSize="12"
+                                         VirtualizingStackPanel.IsVirtualizing="True"
+                                         VirtualizingStackPanel.VirtualizationMode="Recycling" />
+                            </Grid>
+                        </TabItem>
+                    </TabControl>
+                </Grid>
+            </Grid>
+        </TabItem>
+        </TabControl>
 
         <!-- 狀態列 -->
-        <materialDesign:Card Grid.Row="2" Margin="8,4,8,8" Padding="8,4">
+        <materialDesign:Card Grid.Row="1" Margin="8,4,8,8" Padding="8,4">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
                     <TextBlock Text="🟢" FontSize="10" VerticalAlignment="Center" />
