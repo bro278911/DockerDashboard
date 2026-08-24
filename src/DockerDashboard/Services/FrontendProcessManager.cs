@@ -81,6 +81,64 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
 
     public Task<bool> StopDevAsync(FrontendProject project) => StopAsync(project, FrontendProcessKind.Dev);
 
+    public bool IsOneShotActive(FrontendProject project) => IsActive(project, FrontendProcessKind.OneShot);
+
+    public Task<StartResult> RunOneShotAsync(FrontendProject project, string command, string label)
+    {
+        StartResult result;
+        Entry? started;
+
+        lock (_gate)
+        {
+            if (_entries.ContainsKey((project, FrontendProcessKind.OneShot)))
+                return Task.FromResult<StartResult>(new StartResult.AlreadyRunning());
+
+            result = StartCore(project, FrontendProcessKind.OneShot, command, label, out started);
+        }
+
+        // 與 StartDevAsync 同一原則：Running 事件必須在離開鎖之後才觸發
+        if (result is StartResult.Started && started != null)
+        {
+            try
+            {
+                RaiseState(project, FrontendProcessKind.OneShot, FrontendProcessState.Running, 0, started.Label);
+            }
+            catch (Exception ex)
+            {
+                // 訂閱者拋出的例外不可讓 RunOneShotAsync 的 Task<StartResult> 跟著失敗，
+                // manager 不對訂閱者負責，吞掉並記錄即可
+                System.Diagnostics.Debug.WriteLine(
+                    $"[FrontendProcessManager] StateChanged 訂閱者拋出例外: {ex.Message}");
+            }
+        }
+
+        return Task.FromResult(result);
+    }
+
+    public Task<bool> CancelOneShotAsync(FrontendProject project) => StopAsync(project, FrontendProcessKind.OneShot);
+
+    /// <summary>
+    /// App 關閉時呼叫（UI 執行緒）。只送出終止請求不等待：等待會與監控任務的收尾互卡；
+    /// 未及時退出的行程由 ProcessLauncher 的 Job Object 在 App 行程結束時連帶回收
+    /// </summary>
+    public void StopAll()
+    {
+        Entry[] entries;
+        lock (_gate)
+        {
+            entries = [.. _entries.Values];
+            _entries.Clear();
+        }
+
+        foreach (var entry in entries)
+        {
+            entry.UserStopped = true;
+            entry.Cts.Cancel();
+            entry.Stream.Dispose(); // 內含 Kill(entireProcessTree: true)
+            entry.Cts.Dispose();
+        }
+    }
+
     // 呼叫端必須已持有 _gate；不在此處觸發事件，交由呼叫端在離開鎖之後處理
     private StartResult StartCore(
         FrontendProject project, FrontendProcessKind kind, string command, string label, out Entry? started)

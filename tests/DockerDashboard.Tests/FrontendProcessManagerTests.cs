@@ -180,4 +180,53 @@ public class FrontendProcessManagerTests
         var restart = await manager.StartDevAsync(project, [project]);
         Assert.IsType<StartResult.Started>(restart);
     }
+
+    [Fact]
+    public async Task RunOneShotAsync_與devserver並行_兩軸互不影響()
+    {
+        var manager = CreateManager();
+        var project = Project("ping -n 60 127.0.0.1");
+
+        await manager.StartDevAsync(project, [project]);
+        var result = await manager.RunOneShotAsync(project, "ping -n 60 127.0.0.1", "install");
+
+        Assert.IsType<StartResult.Started>(result);
+        Assert.True(manager.IsDevActive(project));
+        Assert.True(manager.IsOneShotActive(project));
+
+        Assert.True(await manager.CancelOneShotAsync(project));
+        Assert.False(manager.IsOneShotActive(project));
+        Assert.True(manager.IsDevActive(project)); // dev 不受一次性指令取消影響
+
+        await manager.StopDevAsync(project);
+    }
+
+    [Fact]
+    public async Task RunOneShotAsync_同專案已有一次性指令_回報AlreadyRunning()
+    {
+        var manager = CreateManager();
+        var project = Project("exit 0");
+
+        await manager.RunOneShotAsync(project, "ping -n 60 127.0.0.1", "install");
+        var result = await manager.RunOneShotAsync(project, "ping -n 60 127.0.0.1", "vitest");
+
+        Assert.IsType<StartResult.AlreadyRunning>(result);
+        await manager.CancelOneShotAsync(project);
+    }
+
+    [Fact]
+    public async Task StopAll_終止全部行程並清空追蹤()
+    {
+        var manager = CreateManager();
+        var a = Project("ping -n 60 127.0.0.1");
+        var b = Project("ping -n 60 127.0.0.1");
+
+        await manager.StartDevAsync(a, [a]);
+        await manager.RunOneShotAsync(b, "ping -n 60 127.0.0.1", "install");
+
+        manager.StopAll();
+
+        Assert.False(manager.IsDevActive(a));
+        Assert.False(manager.IsOneShotActive(b));
+    }
 }
