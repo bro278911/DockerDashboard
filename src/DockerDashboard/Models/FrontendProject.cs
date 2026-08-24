@@ -43,20 +43,31 @@ public partial class FrontendProject : ObservableObject
     [ObservableProperty]
     private string _currentBranch = string.Empty;
 
+    // dev server 狀態（Stopped/Running/Crashed）。不受一次性指令影響，避免 install/vitest/e2e
+    // 結束時把 dev server 的 Crashed 覆寫掉，或 dev 崩潰時把 IsBusy 誤判為 false（見 IsOneShotRunning）
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsBusy))]
-    [NotifyPropertyChangedFor(nameof(IsNotBusy))]
+    [NotifyPropertyChangedFor(nameof(DisplayStatus))]
     private FrontendStatus _status = FrontendStatus.Stopped;
 
-    // dev server 行程存活與否（Busy 期間 dev 可能同時在跑，Status 不足以判斷，故獨立追蹤）
+    // dev server 行程存活與否（一次性指令期間 dev 可能同時在跑，Status 不足以判斷，故獨立追蹤）
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsDevStopped))]
     private bool _isDevRunning;
 
+    // 一次性指令（install/vitest/e2e）執行中與否，獨立於 dev server 的 Status
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsBusy))]
+    [NotifyPropertyChangedFor(nameof(IsNotBusy))]
+    [NotifyPropertyChangedFor(nameof(DisplayStatus))]
+    private bool _isOneShotRunning;
+
     public string FolderName => System.IO.Path.GetFileName(FolderPath.TrimEnd('\\', '/'));
     public bool IsDevStopped => !IsDevRunning;
-    public bool IsBusy => Status == FrontendStatus.Busy;
-    public bool IsNotBusy => Status != FrontendStatus.Busy;
+    public bool IsBusy => IsOneShotRunning;
+    public bool IsNotBusy => !IsOneShotRunning;
+
+    // UI 顯示用：一次性指令執行中時優先顯示 Busy（黃燈），否則反映 dev server 的實際 Status
+    public FrontendStatus DisplayStatus => IsOneShotRunning ? FrontendStatus.Busy : Status;
 
     public static FrontendProject FromConfig(FrontendProjectConfig config) => new()
     {

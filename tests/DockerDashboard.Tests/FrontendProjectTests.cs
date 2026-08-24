@@ -48,4 +48,42 @@ public class FrontendProjectTests
         var project = new FrontendProject { FolderPath = @"D:\repo\Meso-feat-x\" };
         Assert.Equal("Meso-feat-x", project.FolderName);
     }
+
+    // 回歸測試：dev server 崩潰時，一次性指令（install/vitest/e2e）仍在跑，Status 不該被一次性指令的收尾覆寫
+    [Fact]
+    public void Status_不受一次性指令收尾影響_dev崩潰後仍維持Crashed()
+    {
+        var project = new FrontendProject { IsOneShotRunning = true };
+
+        project.Status = FrontendStatus.Crashed; // 模擬 RunDevProcessAsync 崩潰分支
+        project.IsOneShotRunning = false; // 模擬 RunOneShotAsync 完成收尾，不該動到 Status
+
+        Assert.Equal(FrontendStatus.Crashed, project.Status);
+    }
+
+    // 回歸測試：一次性指令執行中時取消鈕（綁 IsBusy）不該因 dev server 崩潰而消失
+    [Fact]
+    public void IsBusy_不受Status變化影響_只看IsOneShotRunning()
+    {
+        var project = new FrontendProject { IsOneShotRunning = true };
+
+        project.Status = FrontendStatus.Crashed; // 模擬 dev server 同時崩潰
+
+        Assert.True(project.IsBusy);
+        Assert.False(project.IsNotBusy);
+    }
+
+    [Fact]
+    public void DisplayStatus_一次性指令執行中時顯示Busy_即使Status是其他值()
+    {
+        var project = new FrontendProject { Status = FrontendStatus.Stopped, IsOneShotRunning = true };
+        Assert.Equal(FrontendStatus.Busy, project.DisplayStatus);
+    }
+
+    [Fact]
+    public void DisplayStatus_無一次性指令時直接反映Status()
+    {
+        var project = new FrontendProject { Status = FrontendStatus.Crashed };
+        Assert.Equal(FrontendStatus.Crashed, project.DisplayStatus);
+    }
 }

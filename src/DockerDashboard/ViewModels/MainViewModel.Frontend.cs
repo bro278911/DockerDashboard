@@ -104,9 +104,7 @@ public partial class MainViewModel
         var ctx = new FrontendProcess { Stream = stream, Cts = new CancellationTokenSource() };
         _devProcesses[project] = ctx;
         project.IsDevRunning = true;
-        // 一次性指令正在跑時維持 Busy，否則轉 Running
-        if (project.Status != FrontendStatus.Busy)
-            project.Status = FrontendStatus.Running;
+        project.Status = FrontendStatus.Running;
         AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ▶ [{project.Name}] 啟動 dev server（{project.DevCommand}）於 {project.FolderPath}");
         StatusMessage = $"▶ {project.Name} dev server 啟動中（{project.CurrentBranch}）";
         UpdateFrontendRunningLabels();
@@ -114,7 +112,21 @@ public partial class MainViewModel
         ctx.ReaderTask = Task.Run(() => RunDevProcessAsync(project, ctx));
     }
 
+    // 外層兜底：確保這個 Task 一定會完成（不 fault），StopFrontendAsync 等它時才不會被
+    // 非預期例外打斷（例如 Dispatcher 關閉期間的 TaskCanceledException）
     private async Task RunDevProcessAsync(FrontendProject project, FrontendProcess ctx)
+    {
+        try
+        {
+            await RunDevProcessCoreAsync(project, ctx);
+        }
+        catch (Exception ex)
+        {
+            AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] dev server 監控發生非預期例外: {ex.Message}");
+        }
+    }
+
+    private async Task RunDevProcessCoreAsync(FrontendProject project, FrontendProcess ctx)
     {
         try
         {
@@ -142,8 +154,7 @@ public partial class MainViewModel
 
             if (ctx.UserStopped)
             {
-                if (project.Status != FrontendStatus.Busy)
-                    project.Status = FrontendStatus.Stopped;
+                project.Status = FrontendStatus.Stopped;
                 AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ⏹ [{project.Name}] dev server 已停止");
             }
             else
@@ -187,7 +198,18 @@ public partial class MainViewModel
         ctx.Cts.Cancel();
         ctx.Stream.Kill(); // entireProcessTree: true，整樹殺掉 node 子行程
         if (ctx.ReaderTask != null)
-            await ctx.ReaderTask; // 等舊行程完全結束再返回，互斥切換時避免 port 尚未釋放
+        {
+            // 等舊行程完全結束再返回，互斥切換時避免 port 尚未釋放；
+            // 加 timeout 避免 kill 失敗（權限、殭屍子行程）時卡死整個前端啟停功能
+            try
+            {
+                await ctx.ReaderTask.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            catch (Exception ex)
+            {
+                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{project.Name}] 停止逾時或發生例外: {ex.Message}");
+            }
+        }
     }
 
     [RelayCommand]
@@ -302,7 +324,7 @@ public partial class MainViewModel
 
         var ctx = new FrontendProcess { Stream = stream, Cts = new CancellationTokenSource() };
         _oneShotProcesses[project] = ctx;
-        project.Status = FrontendStatus.Busy;
+        project.IsOneShotRunning = true;
         AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ▶ [{project.Name}] {label}（{command}）");
         StatusMessage = $"▶ {project.Name} 執行 {label} 中...";
 
@@ -330,8 +352,7 @@ public partial class MainViewModel
             Application.Current?.Dispatcher.InvokeAsync(() =>
             {
                 _oneShotProcesses.Remove(project);
-                // 狀態回復：dev server 還在跑 → Running；否則 Stopped
-                project.Status = project.IsDevRunning ? FrontendStatus.Running : FrontendStatus.Stopped;
+                project.IsOneShotRunning = false; // 不動 Status：避免蓋掉 dev server 的 Crashed/Running
 
                 if (ctx.UserStopped)
                 {

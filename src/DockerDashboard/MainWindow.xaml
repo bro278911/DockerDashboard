@@ -26,7 +26,7 @@
             <StackPanel>
                 <DockPanel>
                     <TextBlock Text="●" FontSize="12" VerticalAlignment="Center"
-                               Foreground="{Binding Status, Converter={StaticResource FrontendStatusToColorConverter}}" />
+                               Foreground="{Binding DisplayStatus, Converter={StaticResource FrontendStatusToColorConverter}}" />
                     <TextBlock Text="{Binding Name}" FontWeight="Bold" Margin="6,0,0,0"
                                VerticalAlignment="Center" />
                     <TextBlock DockPanel.Dock="Right" Text="{Binding CurrentBranch}"
