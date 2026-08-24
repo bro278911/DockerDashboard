@@ -78,5 +78,11 @@ public sealed partial class FrontendLogBuffer : ObservableObject
             Lines.Add(line);
     }
 
-    public void Clear() => Lines.Clear();
+    // 一併清掉排隊中的行，否則按下清除後、下一次 Flush 會立刻把當時已排隊的內容補回來，
+    // 看起來像沒清乾淨
+    public void Clear()
+    {
+        while (_pending.TryDequeue(out _)) { }
+        Lines.Clear();
+    }
 }

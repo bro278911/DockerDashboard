@@ -25,8 +25,10 @@ public sealed class ProcessStream : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        _disposed = true;
+        // 先 Kill 再設 _disposed：順序顛倒的話 Kill() 開頭的 _disposed 檢查會直接 return，
+        // 行程不會被終止（docker logs -f、前端 dev server 都會殘留）
         Kill();
+        _disposed = true;
         _process.Dispose();
     }
 }

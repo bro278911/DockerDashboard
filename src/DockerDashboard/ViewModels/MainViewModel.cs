@@ -32,6 +32,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ConcurrentQueue<string> _pendingLogQueue = new();
     private int _isLogFlushScheduled;
     private int _batchStartupParallelism = 3;
+    // Docker 專案清單是否已載入完成，供 SaveSettingsAsync 判斷可否覆寫該清單
+    private bool _dockerProjectsLoaded;
     private bool _dotnetSdkChecked;
     private bool _dotnetSdkAvailable;
     private CancellationTokenSource? _operationCts;
@@ -215,6 +217,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {project.Name} 未偵測到服務（docker compose config 可能失敗）");
         }
 
+        _dockerProjectsLoaded = true; // 此後 SaveSettingsAsync 才可覆寫 Docker 專案清單
+
         _monitor.Start(TimeSpan.FromSeconds(settings.PollIntervalSeconds));
         var statusConfirmed = await _monitor.ForceRefreshAsync();
 
@@ -351,8 +355,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
     internal async Task SaveSettingsAsync()
     {
         var settings = await _settingsService.LoadAsync();
-        settings.ImportedFolders = [.. Projects.Select(p => p.FolderPath)];
-        settings.RecentlyRemovedFolders = [.. RecentlyRemovedFolders];
+
+        // Docker 專案清單在 InitializeAsync 後段才填好（WSL2 連線最長等 12 秒 + 掃描），
+        // 而前端 Tab 在這段期間已可操作。此時存檔會把還沒載入的清單覆寫成空的，
+        // 故未載入完成前不動這兩個欄位（前端清單在 InitializeAsync 最前面就載入，不受影響）
+        if (_dockerProjectsLoaded)
+        {
+            settings.ImportedFolders = [.. Projects.Select(p => p.FolderPath)];
+            settings.RecentlyRemovedFolders = [.. RecentlyRemovedFolders];
+        }
+
         settings.FrontendProjects =
             [.. InternalProjects.Concat(ExternalProjects).Select(p => p.ToConfig())];
         await _settingsService.SaveAsync(settings);
