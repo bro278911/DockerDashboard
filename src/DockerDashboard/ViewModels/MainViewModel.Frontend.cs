@@ -73,6 +73,42 @@ public partial class MainViewModel
     [RelayCommand]
     private void ClearExternalLog() => ExternalLog.Clear();
 
+    // 兩組 log 面板共用：CommandParameter 綁對應的 InternalLog/ExternalLog，不必各自複製一份指令
+    [RelayCommand]
+    private async Task ExportFrontendLogAsync(FrontendLogBuffer? log)
+    {
+        if (log == null) return;
+
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "匯出日誌",
+            Filter = "文字檔 (*.txt)|*.txt|日誌檔 (*.log)|*.log",
+            FileName = $"frontend-logs-{DateTime.Now:yyyyMMdd-HHmmss}.txt"
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        var snapshot = log.Lines.ToArray();
+        await System.IO.File.WriteAllLinesAsync(dialog.FileName, snapshot);
+        StatusMessage = $"日誌已匯出到 {dialog.FileName}";
+    }
+
+    [RelayCommand]
+    private void CopySelectedFrontendLog(System.Collections.IList? selectedItems)
+    {
+        if (selectedItems is null || selectedItems.Count == 0) return;
+        var text = string.Join(Environment.NewLine, selectedItems.Cast<string>());
+        System.Windows.Clipboard.SetText(text);
+        StatusMessage = $"已複製 {selectedItems.Count} 行日誌";
+    }
+
+    [RelayCommand]
+    private void CopyAllFrontendLog(FrontendLogBuffer? log)
+    {
+        if (log == null || log.Lines.Count == 0) return;
+        System.Windows.Clipboard.SetText(string.Join(Environment.NewLine, log.Lines));
+        StatusMessage = $"已複製全部 {log.Lines.Count} 行日誌";
+    }
+
     [RelayCommand]
     private async Task StartFrontendAsync(FrontendProject? project)
     {

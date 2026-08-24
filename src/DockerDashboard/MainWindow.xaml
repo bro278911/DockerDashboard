@@ -674,15 +674,40 @@
                                             Width="28" Height="28" Margin="8,0,0,0">
                                         <materialDesign:PackIcon Kind="Delete" Width="16" Height="16" />
                                     </Button>
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource MaterialDesignIconForegroundButton}"
+                                            Command="{Binding ExportFrontendLogCommand}" CommandParameter="{Binding InternalLog}"
+                                            ToolTip="匯出日誌" Width="28" Height="28" Margin="8,0,0,0">
+                                        <materialDesign:PackIcon Kind="Download" Width="16" Height="16" />
+                                    </Button>
                                     <TextBox DockPanel.Dock="Right" Width="200" HorizontalAlignment="Right"
                                              materialDesign:HintAssist.Hint="過濾關鍵字"
                                              materialDesign:TextFieldAssist.HasClearButton="True"
                                              Text="{Binding InternalLog.Filter, UpdateSourceTrigger=PropertyChanged}" />
                                 </DockPanel>
                                 <ListBox Grid.Row="1" ItemsSource="{Binding InternalLog.View}"
+                                         SelectionMode="Extended"
                                          FontFamily="Consolas, Courier New" FontSize="12"
                                          VirtualizingStackPanel.IsVirtualizing="True"
-                                         VirtualizingStackPanel.VirtualizationMode="Recycling" />
+                                         VirtualizingStackPanel.VirtualizationMode="Recycling">
+                                    <ListBox.ContextMenu>
+                                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                            <MenuItem Header="複製選取行"
+                                                      Command="{Binding CopySelectedFrontendLogCommand}"
+                                                      CommandParameter="{Binding PlacementTarget.SelectedItems, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
+                                                <MenuItem.Icon>
+                                                    <materialDesign:PackIcon Kind="ContentCopy" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="複製全部日誌"
+                                                      Command="{Binding CopyAllFrontendLogCommand}"
+                                                      CommandParameter="{Binding InternalLog}">
+                                                <MenuItem.Icon>
+                                                    <materialDesign:PackIcon Kind="SelectAll" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                        </ContextMenu>
+                                    </ListBox.ContextMenu>
+                                </ListBox>
                             </Grid>
                         </TabItem>
                         <TabItem Header="外部 log">
@@ -699,15 +724,40 @@
                                             Width="28" Height="28" Margin="8,0,0,0">
                                         <materialDesign:PackIcon Kind="Delete" Width="16" Height="16" />
                                     </Button>
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource MaterialDesignIconForegroundButton}"
+                                            Command="{Binding ExportFrontendLogCommand}" CommandParameter="{Binding ExternalLog}"
+                                            ToolTip="匯出日誌" Width="28" Height="28" Margin="8,0,0,0">
+                                        <materialDesign:PackIcon Kind="Download" Width="16" Height="16" />
+                                    </Button>
                                     <TextBox DockPanel.Dock="Right" Width="200" HorizontalAlignment="Right"
                                              materialDesign:HintAssist.Hint="過濾關鍵字"
                                              materialDesign:TextFieldAssist.HasClearButton="True"
                                              Text="{Binding ExternalLog.Filter, UpdateSourceTrigger=PropertyChanged}" />
                                 </DockPanel>
                                 <ListBox Grid.Row="1" ItemsSource="{Binding ExternalLog.View}"
+                                         SelectionMode="Extended"
                                          FontFamily="Consolas, Courier New" FontSize="12"
                                          VirtualizingStackPanel.IsVirtualizing="True"
-                                         VirtualizingStackPanel.VirtualizationMode="Recycling" />
+                                         VirtualizingStackPanel.VirtualizationMode="Recycling">
+                                    <ListBox.ContextMenu>
+                                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                            <MenuItem Header="複製選取行"
+                                                      Command="{Binding CopySelectedFrontendLogCommand}"
+                                                      CommandParameter="{Binding PlacementTarget.SelectedItems, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
+                                                <MenuItem.Icon>
+                                                    <materialDesign:PackIcon Kind="ContentCopy" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="複製全部日誌"
+                                                      Command="{Binding CopyAllFrontendLogCommand}"
+                                                      CommandParameter="{Binding ExternalLog}">
+                                                <MenuItem.Icon>
+                                                    <materialDesign:PackIcon Kind="SelectAll" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                        </ContextMenu>
+                                    </ListBox.ContextMenu>
+                                </ListBox>
                             </Grid>
                         </TabItem>
                     </TabControl>
