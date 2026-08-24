@@ -1,4 +1,5 @@
 using System.IO;
+using System.Threading;
 using DockerDashboard.Models;
 using DockerDashboard.Services;
 
@@ -182,14 +183,23 @@ public class FrontendProcessManagerTests
     }
 
     // 釘住：OutputReceived 訂閱者拋例外時，讀取迴圈不能因此中斷，行程仍須正常跑完並回報正確的
-    // 最終狀態；與上面的 StateChanged_訂閱者拋例外 測試對稱（同一原則，見 MonitorAsync 內註解）
+    // 最終狀態；與上面的 StateChanged_訂閱者拋例外 測試對稱（同一原則，見 MonitorAsync 內註解）。
+    // 指令用 for /L 迴圈連續輸出 30 行，讓訂閱者每次收到輸出都拋例外，斷言收到的行數 > 1——
+    // 若讀取迴圈被第一次例外中斷，之後的行就不會再進來，行數會卡在 1
     [Fact]
     public async Task OutputReceived_訂閱者拋例外_行程仍正常跑完且狀態正確()
     {
         var manager = CreateManager();
-        var project = Project("echo hello-manager & exit 3");
+        // 括號把 for 迴圈整體圈起來再接 exit 3：否則 exit 3 會被解讀成迴圈主體的一部分，
+        // 導致第一輪迭代就結束整個 cmd（實際驗證過，見 test-fix-report.md）
+        var project = Project("(for /L %i in (1,1,30) do @echo line-%i) & exit 3");
 
-        manager.OutputReceived += (_, _) => throw new InvalidOperationException("訂閱者刻意拋出例外，驗證讀取迴圈不受影響");
+        var receivedCount = 0;
+        manager.OutputReceived += (_, _) =>
+        {
+            Interlocked.Increment(ref receivedCount);
+            throw new InvalidOperationException("訂閱者刻意在每次收到輸出時都拋出例外，驗證讀取迴圈不受影響");
+        };
 
         var crashed = WaitForStateAsync(manager, FrontendProcessState.Crashed, TimeSpan.FromSeconds(20));
         var result = await manager.StartDevAsync(project, [project]);
@@ -198,6 +208,7 @@ public class FrontendProcessManagerTests
         var evt = await crashed;
         Assert.Equal(3, evt.ExitCode);
         Assert.False(manager.IsDevActive(project));
+        Assert.True(receivedCount > 1, $"預期讀取迴圈不被例外中斷、能收到多行輸出，但只收到 {receivedCount} 行");
     }
 
     [Fact]

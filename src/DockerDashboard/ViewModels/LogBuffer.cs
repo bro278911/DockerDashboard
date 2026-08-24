@@ -97,7 +97,12 @@ public sealed partial class LogBuffer : ObservableObject
     }
 
     // 一併清掉排隊中的行，否則按下清除後、下一次 Flush 會立刻把當時已排隊的內容補回來，
-    // 看起來像沒清乾淨
+    // 看起來像沒清乾淨。
+    // 無單元測試覆蓋：這個行為只有在「有 WPF Dispatcher、但尚未執行 Flush」的時間窗內才觀察
+    // 得到——單元測試環境沒有 Application.Current，ScheduleFlush 會同步清空 _pending
+    // （見上方 ScheduleFlush 註解），導致 Clear() 前 PendingCount 必為 0，測試斷言不到任何東西。
+    // 要真的造出「已排程但未 Flush」的狀態得起一個真的 STA Dispatcher 執行緒，成本與 flakiness
+    // 都不成比例，故不補測試；下次修改本方法時仍須留意這兩行都要清
     public void Clear()
     {
         while (_pending.TryDequeue(out _)) { }

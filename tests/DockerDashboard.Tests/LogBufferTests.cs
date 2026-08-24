@@ -54,18 +54,4 @@ public class LogBufferTests
         Assert.Empty(buffer.Lines);
         Assert.Equal(0, buffer.PendingCount);
     }
-
-    // 釘住：Clear() 必須連待處理佇列一併清空，否則清除後下一次 Flush 會把當時已排隊的內容
-    // 補回來，看起來像沒清乾淨（這是刻意的行為修正，見 Clear() 上方註解）
-    [Fact]
-    public void Clear_同時清空Lines與待處理佇列()
-    {
-        var buffer = new LogBuffer();
-        buffer.AppendLine("existing line");
-
-        buffer.Clear();
-
-        Assert.Empty(buffer.Lines);
-        Assert.Equal(0, buffer.PendingCount);
-    }
 }
