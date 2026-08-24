@@ -94,4 +94,21 @@ public class FrontendProjectTests
         var project = new FrontendProject { Status = FrontendStatus.Crashed };
         Assert.Equal(FrontendStatus.Crashed, project.DisplayStatus);
     }
+
+    // IsIdle 供「編輯」按鈕的 IsEnabled 使用：有任何行程在跑就不可編輯
+    [Theory]
+    [InlineData(false, false, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, true, false)]
+    public void IsIdle_任一行程執行中即為false(bool devRunning, bool oneShotRunning, bool expected)
+    {
+        var project = new FrontendProject
+        {
+            IsDevRunning = devRunning,
+            IsOneShotRunning = oneShotRunning,
+        };
+
+        Assert.Equal(expected, project.IsIdle);
+    }
 }

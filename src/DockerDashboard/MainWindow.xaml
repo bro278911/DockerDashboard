@@ -66,6 +66,12 @@
                             Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibilityConverter}}"
                             Command="{Binding Data.CancelOneShotCommand, Source={StaticResource Proxy}}"
                             CommandParameter="{Binding}" />
+                    <Button Content="編輯" Height="26" Padding="8,0"
+                            Style="{StaticResource MaterialDesignFlatButton}"
+                            IsEnabled="{Binding IsIdle}"
+                            ToolTip="編輯名稱、群組與指令（執行中需先停止）"
+                            Command="{Binding Data.EditFrontendProjectCommand, Source={StaticResource Proxy}}"
+                            CommandParameter="{Binding}" />
                     <Button Content="移除" Height="26" Padding="8,0" Foreground="Gray"
                             Style="{StaticResource MaterialDesignFlatButton}"
                             Command="{Binding Data.RemoveFrontendProjectCommand, Source={StaticResource Proxy}}"

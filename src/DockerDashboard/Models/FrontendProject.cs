@@ -52,6 +52,7 @@ public partial class FrontendProject : ObservableObject
     // dev server 行程存活與否（一次性指令期間 dev 可能同時在跑，Status 不足以判斷，故獨立追蹤）
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsDevStopped))]
+    [NotifyPropertyChangedFor(nameof(IsIdle))]
     private bool _isDevRunning;
 
     // 一次性指令（install/vitest/e2e）執行中與否，獨立於 dev server 的 Status
@@ -59,6 +60,7 @@ public partial class FrontendProject : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsBusy))]
     [NotifyPropertyChangedFor(nameof(IsNotBusy))]
     [NotifyPropertyChangedFor(nameof(DisplayStatus))]
+    [NotifyPropertyChangedFor(nameof(IsIdle))]
     private bool _isOneShotRunning;
 
     // 磁碟根目錄（如 D:\）GetFileName 回傳空字串，回退顯示完整路徑避免留白
@@ -76,6 +78,9 @@ public partial class FrontendProject : ObservableObject
 
     // UI 顯示用：一次性指令執行中時優先顯示 Busy（黃燈），否則反映 dev server 的實際 Status
     public FrontendStatus DisplayStatus => IsOneShotRunning ? FrontendStatus.Busy : Status;
+
+    // 沒有任何行程在跑才可編輯：組別會決定行程追蹤、log 歸屬與同組互斥，執行中改掉會錯亂
+    public bool IsIdle => !IsDevRunning && !IsOneShotRunning;
 
     public static FrontendProject FromConfig(FrontendProjectConfig config) => new()
     {
