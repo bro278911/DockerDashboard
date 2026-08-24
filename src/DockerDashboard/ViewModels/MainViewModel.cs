@@ -27,7 +27,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly HostBuildService _hostBuild;
     private readonly FastDevReloadService _fastDevReload;
     private readonly UpdateService _updateService;
-    private readonly NodeProcessService _nodeService;
     private readonly FrontendProcessManager _frontendProcesses;
     private Forms.NotifyIcon? _notifyIcon;
     private readonly ConcurrentQueue<string> _pendingLogQueue = new();
@@ -129,7 +128,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         HostBuildService hostBuild,
         FastDevReloadService fastDevReload,
         UpdateService updateService,
-        NodeProcessService nodeService,
         FrontendProcessManager frontendProcesses)
     {
         _dockerCli = dockerCli;
@@ -140,7 +138,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _hostBuild = hostBuild;
         _fastDevReload = fastDevReload;
         _updateService = updateService;
-        _nodeService = nodeService;
         _frontendProcesses = frontendProcesses;
 
         _scanner.Log = message => AppendLog($"[{DateTime.Now:HH:mm:ss}] {message}");
