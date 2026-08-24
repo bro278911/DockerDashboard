@@ -550,7 +550,9 @@ public partial class MainViewModel
     [RelayCommand]
     private async Task RescanProjectsAsync()
     {
-        var folders = Projects.Select(p => p.FolderPath).ToList();
+        // 記住掃描開始時的物件參照，供稍後判斷哪些是「掃描期間才新匯入」的
+        var originals = Projects.ToList();
+        var folders = originals.Select(p => p.FolderPath).ToList();
 
         // 先在暫存集合掃描完，成功才整批換進 Projects：直接 Clear 再 await 的話，
         // 期間其他命令（如前端專案增修）觸發存檔會把 ImportedFolders 寫成空清單；
@@ -569,23 +571,29 @@ public partial class MainViewModel
         }
 
         // 依「掃描結束當下」的清單合併，不是拿掃描開始時的舊快照整批覆蓋：
-        // 掃描期間使用者可能匯入新專案（會被舊快照抹掉）或移除專案（會被舊快照復活）
-        var currentFolders = Projects
-            .Select(p => p.FolderPath)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var rescanned = results
-            .Where(p => currentFolders.Contains(p.FolderPath))
-            .ToList();
-        var rescannedFolders = rescanned
-            .Select(p => p.FolderPath)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        // 掃描期間新匯入、不在本次掃描結果內的專案原樣保留
-        var addedDuringScan = Projects
-            .Where(p => !rescannedFolders.Contains(p.FolderPath))
-            .ToList();
+        // 掃描期間使用者可能匯入新專案（會被舊快照抹掉）或移除專案（會被舊快照復活）。
+        // 用物件參照而非路徑判斷是否為掃描期間新增，否則「資料夾已不存在、因此沒有掃描結果」
+        // 的失效專案會被誤認成新匯入而永久保留，失去重新掃描本該有的清除效果
+        var scannedByFolder = results.ToDictionary(
+            p => p.FolderPath, StringComparer.OrdinalIgnoreCase);
+
+        var merged = new List<DockerProject>();
+        foreach (var existing in Projects)
+        {
+            var isOriginal = originals.Any(o => ReferenceEquals(o, existing));
+            if (!isOriginal)
+            {
+                merged.Add(existing); // 掃描期間新匯入，原樣保留
+                continue;
+            }
+
+            // 原有專案：有掃描結果就換成新的，沒有代表資料夾已失效 → 移除
+            if (scannedByFolder.TryGetValue(existing.FolderPath, out var rescanned))
+                merged.Add(rescanned);
+        }
 
         Projects.Clear();
-        foreach (var project in rescanned.Concat(addedDuringScan))
+        foreach (var project in merged)
         {
             Projects.Add(project);
             if (project.ComposeFiles.Count == 0)
