@@ -14,6 +14,8 @@ public sealed class ProcessStream : IDisposable
 
     internal ProcessStream(Process process) => _process = process;
 
+    public Task WaitForExitAsync(CancellationToken ct = default) => _process.WaitForExitAsync(ct);
+
     public void Kill()
     {
         if (_disposed || _process.HasExited) return;

@@ -32,6 +32,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ContainerMonitorService>();
         services.AddSingleton<HostBuildService>();
         services.AddSingleton<FastDevReloadService>();
+        services.AddSingleton<NodeProcessService>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
     }
