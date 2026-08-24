@@ -191,6 +191,86 @@ public partial class MainViewModel
     }
 
     [RelayCommand]
+    private async Task AddFrontendProjectAsync()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "選擇前端專案資料夾" };
+        if (dialog.ShowDialog() != true) return;
+
+        var folder = dialog.FolderName;
+        if (InternalProjects.Concat(ExternalProjects)
+            .Any(p => p.FolderPath.Equals(folder, StringComparison.OrdinalIgnoreCase)))
+        {
+            StatusMessage = "⚠ 此資料夾已加入過";
+            return;
+        }
+
+        // 無 package.json 仍可硬加（指令可自訂），但先提示確認
+        if (!System.IO.File.Exists(System.IO.Path.Combine(folder, "package.json")))
+        {
+            var confirm = System.Windows.MessageBox.Show(
+                $"{folder}\n\n找不到 package.json，仍要加入嗎？",
+                "加入前端專案",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+            if (confirm != System.Windows.MessageBoxResult.Yes) return;
+        }
+
+        var project = new FrontendProject
+        {
+            Name = System.IO.Path.GetFileName(folder.TrimEnd('\\', '/')),
+            FolderPath = folder,
+        };
+        if (_gitService.IsGitRepository(folder))
+            project.CurrentBranch = await _gitService.GetCurrentBranchAsync(folder);
+
+        var editor = new Views.FrontendProjectDialog(project)
+        {
+            Owner = Application.Current.MainWindow
+        };
+        if (editor.ShowDialog() != true) return;
+
+        ProjectsOf(project.Group).Add(project);
+        await SaveSettingsAsync();
+        StatusMessage = $"✅ 已加入前端專案 {project.Name}";
+    }
+
+    [RelayCommand]
+    private async Task RemoveFrontendProjectAsync(FrontendProject? project)
+    {
+        if (project == null) return;
+
+        // 執行中先停止再移除
+        if (_oneShotProcesses.ContainsKey(project)) CancelOneShot(project);
+        await StopFrontendAsync(project);
+
+        ProjectsOf(project.Group).Remove(project);
+        await SaveSettingsAsync();
+        StatusMessage = $"已移除前端專案 {project.Name}";
+    }
+
+    // 啟動載入：還原設定中的前端專案並背景更新分支
+    internal void LoadFrontendProjects(AppSettings settings)
+    {
+        foreach (var config in settings.FrontendProjects)
+        {
+            var project = FrontendProject.FromConfig(config);
+            ProjectsOf(project.Group).Add(project);
+        }
+        _ = RefreshFrontendBranchesAsync();
+    }
+
+    private async Task RefreshFrontendBranchesAsync()
+    {
+        foreach (var project in InternalProjects.Concat(ExternalProjects).ToList())
+        {
+            if (!_gitService.IsGitRepository(project.FolderPath)) continue;
+            var branch = await _gitService.GetCurrentBranchAsync(project.FolderPath);
+            await (Application.Current?.Dispatcher.InvokeAsync(() => project.CurrentBranch = branch).Task
+                   ?? Task.CompletedTask);
+        }
+    }
+
+    [RelayCommand]
     private Task RunInstallAsync(FrontendProject? project)
         => RunOneShotAsync(project, project?.InstallCommand, "install");
 

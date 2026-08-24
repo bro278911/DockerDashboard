@@ -190,6 +190,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         foreach (var folder in settings.RecentlyRemovedFolders)
             RecentlyRemovedFolders.Add(folder);
 
+        LoadFrontendProjects(settings);
+
         var loaded = await Task.WhenAll(
             settings.ImportedFolders
                 .Where(System.IO.Directory.Exists)
@@ -348,6 +350,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var settings = await _settingsService.LoadAsync();
         settings.ImportedFolders = [.. Projects.Select(p => p.FolderPath)];
         settings.RecentlyRemovedFolders = [.. RecentlyRemovedFolders];
+        settings.FrontendProjects =
+            [.. InternalProjects.Concat(ExternalProjects).Select(p => p.ToConfig())];
         await _settingsService.SaveAsync(settings);
     }
 
