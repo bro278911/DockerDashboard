@@ -62,7 +62,19 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
         // 狀態轉換，不能假設外部訂閱者不會阻塞或反過來呼叫本 manager（例如同步取用 IsDevActive），
         // 否則在鎖內同步呼叫訂閱者會有死鎖風險
         if (result is StartResult.Started && started != null)
-            RaiseState(project, FrontendProcessKind.Dev, FrontendProcessState.Running, 0, started.Label);
+        {
+            try
+            {
+                RaiseState(project, FrontendProcessKind.Dev, FrontendProcessState.Running, 0, started.Label);
+            }
+            catch (Exception ex)
+            {
+                // 與 MonitorAsync 尾端同一原則：訂閱者拋出的例外不可讓 StartDevAsync 的
+                // Task<StartResult> 跟著失敗，manager 不對訂閱者負責，吞掉並記錄即可
+                System.Diagnostics.Debug.WriteLine(
+                    $"[FrontendProcessManager] StateChanged 訂閱者拋出例外: {ex.Message}");
+            }
+        }
 
         return Task.FromResult(result);
     }
@@ -107,7 +119,16 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
             entry.UserStopped = true;
         }
 
-        entry.Cts.Cancel();
+        try
+        {
+            entry.Cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // 同一瞬間行程剛好自然結束：MonitorAsync 已在鎖外把這個 entry 的 Cts Dispose 掉，
+            // 此時取消已無意義（行程已經在結束了），視同取消成功繼續往下走 Kill/等待
+        }
+
         entry.Stream.Kill();
 
         if (entry.Monitor != null)
@@ -151,10 +172,22 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
             ? (entry.UserStopped ? FrontendProcessState.Stopped : FrontendProcessState.Crashed)
             : FrontendProcessState.Stopped;
 
-        RaiseState(project, kind, state, exitCode, entry.Label);
-
-        entry.Stream.Dispose();
-        entry.Cts.Dispose();
+        try
+        {
+            RaiseState(project, kind, state, exitCode, entry.Label);
+        }
+        catch (Exception ex)
+        {
+            // 訂閱者拋出的例外不可讓下方的資源釋放被跳過，也不可讓這個 fire-and-forget 的
+            // Task.Run 變成 unobserved faulted task；此處吞掉並記錄即可，manager 不對訂閱者負責
+            System.Diagnostics.Debug.WriteLine(
+                $"[FrontendProcessManager] StateChanged 訂閱者拋出例外: {ex.Message}");
+        }
+        finally
+        {
+            entry.Stream.Dispose();
+            entry.Cts.Dispose();
+        }
     }
 
     private async Task ReadAsync(FrontendProject project, System.IO.StreamReader reader, CancellationToken ct)

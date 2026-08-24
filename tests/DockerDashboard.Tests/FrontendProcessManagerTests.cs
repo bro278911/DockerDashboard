@@ -149,4 +149,35 @@ public class FrontendProcessManagerTests
 
         Assert.Contains("hello-manager", await tcs.Task.WaitAsync(TimeSpan.FromSeconds(20)));
     }
+
+    // 釘住：StateChanged 訂閱者拋例外時，MonitorAsync 尾端仍必須釋放資源（Stream/Cts Dispose）並
+    // 清空追蹤字典，例外本身不能讓監控流程中斷。StartDevAsync 內部也會同步觸發一次 Running 事件
+    // （見 StartDevAsync 實作），為了單純測試 MonitorAsync 尾端這條路徑，拋例外的處理常式要在
+    // StartDevAsync 回傳（Running 事件已同步觸發完畢）之後才訂閱，避免連帶炸到 StartDevAsync 本身。
+    [Fact]
+    public async Task StateChanged_訂閱者拋例外_資源仍釋放且字典仍清空()
+    {
+        var manager = CreateManager();
+        var project = Project("exit 0");
+
+        var tcs = new TaskCompletionSource<FrontendStateEventArgs>();
+        manager.StateChanged += (_, e) =>
+        {
+            if (ReferenceEquals(e.Project, project) && e.State != FrontendProcessState.Running)
+                tcs.TrySetResult(e);
+        };
+
+        var result = await manager.StartDevAsync(project, [project]);
+        Assert.IsType<StartResult.Started>(result);
+
+        manager.StateChanged += (_, _) => throw new InvalidOperationException("訂閱者刻意拋出例外，驗證 manager 的資源釋放不受影響");
+
+        var evt = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(20));
+        Assert.Equal(FrontendProcessState.Crashed, evt.State);
+        Assert.False(manager.IsDevActive(project));
+
+        // 字典已正確清空、manager 未被拋例外的訂閱者卡住，同一專案可以再次成功啟動
+        var restart = await manager.StartDevAsync(project, [project]);
+        Assert.IsType<StartResult.Started>(restart);
+    }
 }
