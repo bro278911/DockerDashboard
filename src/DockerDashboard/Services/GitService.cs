@@ -84,8 +84,7 @@ public class GitService : IGitService
         foreach (var arg in arguments)
             psi.ArgumentList.Add(arg);
 
-        using var process = new Process { StartInfo = psi };
-        process.Start();
+        using var process = ProcessLauncher.Start(psi);
 
         var stdoutTask = process.StandardOutput.ReadToEndAsync();
         var stderrTask = process.StandardError.ReadToEndAsync();

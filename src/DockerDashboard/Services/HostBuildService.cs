@@ -98,7 +98,7 @@ public class HostBuildService
         psi.ArgumentList.Add("-v");
         psi.ArgumentList.Add("minimal");
 
-        using var process = new Process { StartInfo = psi };
+        using var process = ProcessLauncher.Start(psi);
         var output = new StringBuilder();
         // stdout/stderr 事件在不同執行緒觸發，StringBuilder 非執行緒安全
         var outputLock = new object();
@@ -119,7 +119,6 @@ public class HostBuildService
             }
         };
 
-        process.Start();
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 

@@ -131,9 +131,8 @@ public partial class SettingsWindow : Window
             psi.ArgumentList.Add("echo");
             psi.ArgumentList.Add("ok");
 
-            using var process = new Process { StartInfo = psi };
+            using var process = ProcessLauncher.Start(psi);
             using var cts = new CancellationTokenSource(5000);
-            process.Start();
             var output = await process.StandardOutput.ReadToEndAsync(cts.Token);
             await process.WaitForExitAsync(cts.Token);
 
@@ -166,9 +165,8 @@ public partial class SettingsWindow : Window
             psi.ArgumentList.Add("--format");
             psi.ArgumentList.Add("{{.Server.Version}}");
 
-            using var process = new Process { StartInfo = psi };
+            using var process = ProcessLauncher.Start(psi);
             using var cts = new CancellationTokenSource(10000);
-            process.Start();
             var output = await process.StandardOutput.ReadToEndAsync(cts.Token);
             var error = await process.StandardError.ReadToEndAsync(cts.Token);
             await process.WaitForExitAsync(cts.Token);

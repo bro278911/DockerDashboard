@@ -27,8 +27,7 @@ public class NodeProcessService
         // 與其餘輸出仍正確，只是這類訊息本身顯示為亂碼。
         psi.Arguments = $"/s /c \"{command}\"";
 
-        var process = new Process { StartInfo = psi };
-        process.Start();
+        var process = ProcessLauncher.Start(psi);
         return new ProcessStream(process);
     }
 }

@@ -1049,8 +1049,8 @@ public partial class MainViewModel
                 RedirectStandardError = true,
                 CreateNoWindow = true
             };
-            using var p = System.Diagnostics.Process.Start(psi);
-            _dotnetSdkAvailable = p != null && (await Task.Run(async () => { await p.WaitForExitAsync(); return p.ExitCode; })) == 0;
+            using var p = ProcessLauncher.Start(psi);
+            _dotnetSdkAvailable = (await Task.Run(async () => { await p.WaitForExitAsync(); return p.ExitCode; })) == 0;
         }
         catch { _dotnetSdkAvailable = false; }
         _dotnetSdkChecked = true;
@@ -1109,7 +1109,7 @@ public partial class MainViewModel
     {
         if (string.IsNullOrEmpty(url)) return;
 
-        Process.Start(new ProcessStartInfo
+        ProcessLauncher.StartDetached(new ProcessStartInfo
         {
             FileName = url,
             UseShellExecute = true

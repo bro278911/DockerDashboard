@@ -49,7 +49,7 @@ public class UpdateService
         // UseShellExecute = true：不繼承 file handle
         // timeout /t 20：等 app 完全退出 + AV 掃描（最多 20 秒）
         var cmdArgs = $"/c timeout /t 20 /nobreak > nul & \"{updateExe}\" apply -p \"{nupkgPath}\"";
-        Process.Start(new ProcessStartInfo("cmd.exe", cmdArgs)
+        ProcessLauncher.StartDetached(new ProcessStartInfo("cmd.exe", cmdArgs)
         {
             UseShellExecute = true,
             WindowStyle = ProcessWindowStyle.Hidden
