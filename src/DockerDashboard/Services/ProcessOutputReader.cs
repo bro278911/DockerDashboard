@@ -21,6 +21,7 @@ public static class ProcessOutputReader
                 ReadAsync(stream.StandardError, onLine, ct));
         }
         catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
     }
 
     private static async Task ReadAsync(StreamReader reader, Action<string> onLine, CancellationToken ct)
