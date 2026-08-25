@@ -11,10 +11,8 @@ namespace DockerDashboard.Services;
 /// 判定規則：UseShellExecute = true，或刻意要活得比 App 久的行程（自動更新、開瀏覽器）
 /// 走 StartDetached 不納管；其餘我方導向串流、由我方負責回收的子行程走 Start。
 ///
-/// 已知殘餘風險：process.Start() 與 AssignProcessToJobObject 之間有極短窗口，若子行程恰好在
-/// 這段期間內就 fork 出孫行程，孫行程不會被納入 Job（不會被連帶回收）。正解需改用
-/// CREATE_SUSPENDED 搭配自寫 CreateProcess P/Invoke，在 assign 完成後才 Resume，但實作與維護
-/// 成本相對這個極窄窗口的實際發生機率不成比例，故此處刻意不採用，僅記錄於此。
+/// 啟動後若指派到 Job 失敗且行程仍存活，會立即終止並回報失敗，避免在「保證已失效」
+/// 的狀態下讓呼叫端繼續持有未納管行程。
 /// </summary>
 public static class ProcessLauncher
 {
@@ -39,9 +37,17 @@ public static class ProcessLauncher
                 nameof(psi));
 
         var process = new Process { StartInfo = psi };
-        process.Start();
-        TryAssignToJob(process);
-        return process;
+        try
+        {
+            process.Start();
+            EnsureAssignedToJobOrExited(process);
+            return process;
+        }
+        catch
+        {
+            process.Dispose();
+            throw;
+        }
     }
 
     /// <summary>啟動刻意要活得比 App 久的行程（自動更新、開瀏覽器），不納入 Job</summary>
@@ -60,19 +66,50 @@ public static class ProcessLauncher
         }
     }
 
-    private static void TryAssignToJob(Process process)
+    private static void EnsureAssignedToJobOrExited(Process process)
     {
         if (_job == IntPtr.Zero) return;
+
+        var assignFailedMessage = string.Empty;
         try
         {
-            // 行程可能在指派前就結束（短命指令），失敗屬正常，不影響功能
-            if (!AssignProcessToJobObject(_job, process.Handle))
-                Debug.WriteLine($"[ProcessLauncher] 指派行程到 Job 失敗: {Marshal.GetLastWin32Error()}");
+            if (AssignProcessToJobObject(_job, process.Handle))
+                return;
+
+            var err = Marshal.GetLastWin32Error();
+            assignFailedMessage = $"指派行程到 Job 失敗（Win32 錯誤碼 {err}）";
+            // 行程若已結束，通常是「短命指令在指派前自然退出」，這是可接受競態
+            if (process.HasExited)
+            {
+                Debug.WriteLine($"[ProcessLauncher] {assignFailedMessage}；行程已結束，忽略");
+                return;
+            }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[ProcessLauncher] 指派行程到 Job 發生例外: {ex.Message}");
+            assignFailedMessage = $"指派行程到 Job 發生例外: {ex.Message}";
+            try
+            {
+                if (process.HasExited) return;
+            }
+            catch
+            {
+                // 無法判定存活狀態時，保守視為失敗
+            }
         }
+
+        JobUnavailableReason ??= assignFailedMessage;
+        Debug.WriteLine($"[ProcessLauncher] {assignFailedMessage}");
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch
+        {
+            // 交由上層以「啟動失敗」處理
+        }
+
+        throw new InvalidOperationException(assignFailedMessage);
     }
 
     private static IntPtr CreateAppJob()

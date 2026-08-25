@@ -14,6 +14,7 @@ namespace DockerDashboard.ViewModels;
 
 public partial class MainViewModel
 {
+    private readonly Dictionary<FrontendProject, int> _devStartAttempts = [];
     public ObservableCollection<FrontendProject> InternalProjects { get; } = [];
     public ObservableCollection<FrontendProject> ExternalProjects { get; } = [];
     public LogBuffer InternalLog { get; } = new();
@@ -158,6 +159,7 @@ public partial class MainViewModel
     {
         if (project == null) return;
 
+        var attempt = BeginDevStartAttempt(project);
         project.IsStarting = true;
         try
         {
@@ -186,6 +188,8 @@ public partial class MainViewModel
             {
                 case StartResult.Started:
                     await RefreshBranchAsync(project);
+                    if (!IsDevStartAttemptActive(project, attempt))
+                        return;
                     AppendFrontendLog(project,
                         $"[{DateTime.Now:HH:mm:ss}] ▶ [{project.Name}] 啟動 dev server（{project.DevCommand}）於 {project.FolderPath}");
                     StatusMessage = $"▶ {project.Name} dev server 啟動中（{project.BranchDisplay}）";
@@ -200,7 +204,8 @@ public partial class MainViewModel
         }
         finally
         {
-            project.IsStarting = false;
+            if (IsCurrentDevStartAttempt(project, attempt))
+                project.IsStarting = false;
         }
     }
 
@@ -208,6 +213,7 @@ public partial class MainViewModel
     private async Task StopFrontendAsync(FrontendProject? project)
     {
         if (project == null) return;
+        InvalidateDevStartAttempt(project);
         if (!await _frontendProcesses.StopDevAsync(project))
             StatusMessage = $"⚠ {project.Name} 停止未完成，行程可能仍在執行";
     }
@@ -376,18 +382,35 @@ public partial class MainViewModel
     {
         if (project == null) return;
 
-        // 先從集合移除：該專案列（含 install/vitest/e2e 按鈕）立刻從 UI 消失，使用者無從
-        // 在停止行程期間再觸發新的一次性指令，因此不需要再靠第二次取消補這個窗口
-        ProjectsOf(project.Group).Remove(project);
+        InvalidateDevStartAttempt(project);
 
-        // 再停行程；即使沒能確認結束，Job Object 也保證它不會活得比 App 久
+        // 先停行程，確認關閉後才從集合移除，避免 manager 仍追蹤舊行程時 UI 互斥判斷漏掉它
         await _frontendProcesses.CancelOneShotAsync(project);
         await _frontendProcesses.StopDevAsync(project);
 
+        ProjectsOf(project.Group).Remove(project);
         UpdateFrontendRunningLabels();
         await SaveSettingsAsync();
         StatusMessage = $"已移除前端專案 {project.Name}";
     }
+
+    private int BeginDevStartAttempt(FrontendProject project)
+    {
+        var next = _devStartAttempts.TryGetValue(project, out var current) ? current + 1 : 1;
+        _devStartAttempts[project] = next;
+        return next;
+    }
+
+    private void InvalidateDevStartAttempt(FrontendProject project)
+    {
+        _devStartAttempts[project] = _devStartAttempts.TryGetValue(project, out var current) ? current + 1 : 1;
+    }
+
+    private bool IsCurrentDevStartAttempt(FrontendProject project, int attempt)
+        => _devStartAttempts.TryGetValue(project, out var current) && current == attempt;
+
+    private bool IsDevStartAttemptActive(FrontendProject project, int attempt)
+        => IsCurrentDevStartAttempt(project, attempt) && _frontendProcesses.IsDevActive(project);
 
     // 啟動載入：還原設定中的前端專案並背景更新分支。
     // 刻意不比照後端用 Where(Directory.Exists) 過濾：資料夾被刪/改名時保留使用者設定的自訂

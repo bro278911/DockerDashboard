@@ -46,7 +46,9 @@ public partial class MainViewModel
             ? _dockerCli.StartLogStream(containerName)
             : _dockerCli.StartComposeLogStream(service.WorkingDirectory, service.Name);
 
-        Task.Run(() => ProcessOutputReader.ReadAllAsync(_logProcess, AppendLog, _logCts.Token));
+        var process = _logProcess!;
+        var cts = _logCts!;
+        Task.Run(() => ProcessOutputReader.ReadAllAsync(process, AppendLog, cts.Token));
         StatusMessage = $"正在串流 {service.Name} 的日誌...";
     }
 

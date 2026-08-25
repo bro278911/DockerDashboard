@@ -204,6 +204,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         foreach (var project in loaded.OfType<DockerProject>())
         {
+            if (Projects.Any(p => p.FolderPath.Equals(project.FolderPath, StringComparison.OrdinalIgnoreCase)))
+                continue;
             Projects.Add(project);
             if (project.ComposeFiles.Count == 0)
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {project.Name} 未偵測到服務（docker compose config 可能失敗）");
@@ -349,20 +351,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         // 變更與序列化都在 SettingsService 的臨界區內完成，避免共用的 cached 物件在序列化途中被改
         return _settingsService.UpdateAsync(settings =>
         {
-            // Docker 專案清單在 InitializeAsync 後段才填好（WSL2 連線最長等 12 秒 + 掃描），
-            // 重新掃描期間也會先 Clear 再 await；而前端 Tab 全程可操作。
-            // 這些空窗期集合並不完整，直接覆寫會把設定寫成空清單。
-            // 但也不能整個略過：使用者在空窗期匯入的項目會因此永遠存不進去，
-            // 故改為與檔案既有值聯集（空窗期集合只會多不會少）
-            if (_dockerProjectsLoaded)
-            {
-                settings.ImportedFolders = [.. Projects.Select(p => p.FolderPath)];
-                settings.RecentlyRemovedFolders = [.. RecentlyRemovedFolders];
-            }
-            else
-            {
-                settings.ImportedFolders = MergeFolders(settings.ImportedFolders, Projects.Select(p => p.FolderPath));
-            }
+            // Docker 專案清單在載入/重掃空窗期可能不完整，且單一路徑載入失敗不應被覆寫遺失；
+            // 一律以「設定既有值 + 記憶體清單」聯集，再排除近期移除項目，避免遺失/復活/重複
+            settings.RecentlyRemovedFolders = [.. RecentlyRemovedFolders];
+            var removed = settings.RecentlyRemovedFolders.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            settings.ImportedFolders =
+            [
+                .. MergeFolders(settings.ImportedFolders, Projects.Select(p => p.FolderPath))
+                    .Where(folder => !removed.Contains(folder))
+            ];
 
             var frontendConfigs = InternalProjects.Concat(ExternalProjects).Select(p => p.ToConfig()).ToList();
             if (_frontendProjectsLoaded)

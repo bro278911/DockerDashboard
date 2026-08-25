@@ -37,4 +37,28 @@ public class SettingsServiceTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task LoadAsync_回傳快照_呼叫端修改不會污染快取()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"dd-settings-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "settings.json");
+
+        try
+        {
+            var service = new SettingsService(path);
+            await service.SaveAsync(new AppSettings { ImportedFolders = ["A"] });
+
+            var first = await service.LoadAsync();
+            first.ImportedFolders.Add("B"); // 未經 Save/Update 的外部修改不應反寫到快取
+
+            var second = await service.LoadAsync();
+            Assert.Equal(["A"], second.ImportedFolders);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

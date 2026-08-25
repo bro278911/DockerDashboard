@@ -31,13 +31,14 @@ public class SettingsService
     // 且較慢的讀取可能在存檔後才回來、用舊內容覆寫 _cached，讓後續存檔遺失變更
     public async Task<AppSettings> LoadAsync()
     {
-        if (_cached != null) return _cached;
+        if (_cached != null) return CloneSettings(_cached);
 
         await _gate.WaitAsync();
         try
         {
-            if (_cached != null) return _cached;
-            return _cached = await ReadAsync();
+            if (_cached != null) return CloneSettings(_cached);
+            _cached = await ReadAsync();
+            return CloneSettings(_cached);
         }
         finally
         {
@@ -55,8 +56,9 @@ public class SettingsService
         await _gate.WaitAsync();
         try
         {
-            _cached = settings;
-            await WriteAsync(settings);
+            var snapshot = CloneSettings(settings);
+            _cached = snapshot;
+            await WriteAsync(snapshot);
         }
         finally
         {
@@ -74,8 +76,9 @@ public class SettingsService
         await _gate.WaitAsync();
         try
         {
-            var settings = _cached ??= await ReadAsync();
+            var settings = CloneSettings(_cached ??= await ReadAsync());
             mutate(settings);
+            _cached = settings;
             await WriteAsync(settings);
         }
         finally
@@ -111,4 +114,9 @@ public class SettingsService
             throw;
         }
     }
+
+    private static AppSettings CloneSettings(AppSettings settings)
+        => JsonSerializer.Deserialize<AppSettings>(
+            JsonSerializer.Serialize(settings, JsonOptions),
+            JsonOptions) ?? new AppSettings();
 }
