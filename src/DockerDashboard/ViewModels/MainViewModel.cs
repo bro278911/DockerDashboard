@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -7,7 +6,6 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DockerDashboard.Models;
@@ -27,27 +25,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly HostBuildService _hostBuild;
     private readonly FastDevReloadService _fastDevReload;
     private readonly UpdateService _updateService;
+    private readonly FrontendProcessManager _frontendProcesses;
     private Forms.NotifyIcon? _notifyIcon;
-    private readonly ConcurrentQueue<string> _pendingLogQueue = new();
-    private int _isLogFlushScheduled;
     private int _batchStartupParallelism = 3;
+    // 兩份清單各自的「內容是否可信」旗標，供 SaveSettingsAsync 判斷可否覆寫對應設定欄位。
+    // 載入中或重新掃描中集合會是空的或不完整，此時存檔會把設定寫成空清單
+    internal bool _dockerProjectsLoaded;
+    internal bool _frontendProjectsLoaded;
     private bool _dotnetSdkChecked;
     private bool _dotnetSdkAvailable;
     private CancellationTokenSource? _operationCts;
 
     public ObservableCollection<DockerProject> Projects { get; } = [];
-    public ObservableCollection<string> LogLines { get; } = [];
+    public LogBuffer BackendLog { get; } = new();
     public ObservableCollection<string> RecentlyRemovedFolders { get; } = [];
-
-    private ICollectionView? _logView;
-    public ICollectionView? LogView
-    {
-        get => _logView;
-        private set => SetProperty(ref _logView, value);
-    }
-
-    [ObservableProperty]
-    private string _logFilter = string.Empty;
 
     [ObservableProperty]
     private bool _fastDevAutoReloadEnabled = true;
@@ -122,7 +113,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ContainerMonitorService monitor,
         HostBuildService hostBuild,
         FastDevReloadService fastDevReload,
-        UpdateService updateService)
+        UpdateService updateService,
+        FrontendProcessManager frontendProcesses)
     {
         _dockerCli = dockerCli;
         _gitService = gitService;
@@ -132,15 +124,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _hostBuild = hostBuild;
         _fastDevReload = fastDevReload;
         _updateService = updateService;
+        _frontendProcesses = frontendProcesses;
 
         _scanner.Log = message => AppendLog($"[{DateTime.Now:HH:mm:ss}] {message}");
 
         _monitor.ContainersUpdated += OnContainersUpdated;
         _monitor.ContainerCrashed += OnContainerCrashed;
         _fastDevReload.OnSolutionChanged = OnFastDevSolutionChangedAsync;
-
-        LogView = CollectionViewSource.GetDefaultView(LogLines);
-        LogView.Filter = LogFilterPredicate;
+        _frontendProcesses.OutputReceived += OnFrontendOutput;
+        _frontendProcesses.StateChanged += OnFrontendStateChanged;
     }
 
     public void SetNotifyIcon(Forms.NotifyIcon? icon)
@@ -150,7 +142,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public async Task InitializeAsync()
     {
+        // Job Object 不可用時，「App 結束必連帶回收子行程」的保證就不成立，Release 組態沒有
+        // Debug.WriteLine 可看，必須在這裡明確告知使用者
+        if (ProcessLauncher.JobUnavailableReason is { } jobUnavailableReason)
+            AppendLog($"⚠ 行程回收保證不可用（{jobUnavailableReason}），App 異常結束時可能殘留子行程");
+
         var settings = await _settingsService.LoadAsync();
+
+        // 盡早載入：SaveSettingsAsync 會整包覆寫 settings.json，若視窗在下面 Docker 連線等待
+        // 期間仍可互動、使用者恰好觸發存檔，載入太晚會把尚未還原的 FrontendProjects 存成空清單
+        LoadFrontendProjects(settings);
+
         ApplyDockerModeSettings(settings);
 
         // WSL2 模式：[boot] 的 service docker start 可能需數秒才完成，
@@ -200,12 +202,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     }
                 }));
 
+        var removedFolders = RecentlyRemovedFolders.ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var project in loaded.OfType<DockerProject>())
         {
+            if (removedFolders.Contains(project.FolderPath))
+                continue;
+            if (Projects.Any(p => p.FolderPath.Equals(project.FolderPath, StringComparison.OrdinalIgnoreCase)))
+                continue;
             Projects.Add(project);
             if (project.ComposeFiles.Count == 0)
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {project.Name} 未偵測到服務（docker compose config 可能失敗）");
         }
+
+        _dockerProjectsLoaded = true; // 此後 SaveSettingsAsync 才可覆寫 Docker 專案清單
 
         _monitor.Start(TimeSpan.FromSeconds(settings.PollIntervalSeconds));
         var statusConfirmed = await _monitor.ForceRefreshAsync();
@@ -340,12 +349,55 @@ public partial class MainViewModel : ObservableObject, IDisposable
             RecentlyRemovedFolders.Remove(existing);
     }
 
-    internal async Task SaveSettingsAsync()
+    internal void TrackRecentlyRemovedFolder(string folder)
     {
-        var settings = await _settingsService.LoadAsync();
-        settings.ImportedFolders = [.. Projects.Select(p => p.FolderPath)];
-        settings.RecentlyRemovedFolders = [.. RecentlyRemovedFolders];
-        await _settingsService.SaveAsync(settings);
+        RemoveRecentFolder(folder);
+        RecentlyRemovedFolders.Add(folder);
+        if (RecentlyRemovedFolders.Count > 10)
+            RecentlyRemovedFolders.RemoveAt(0);
+    }
+
+    internal Task SaveSettingsAsync()
+    {
+        // 變更與序列化都在 SettingsService 的臨界區內完成，避免共用的 cached 物件在序列化途中被改
+        return _settingsService.UpdateAsync(settings =>
+        {
+            // Docker 專案清單在載入/重掃空窗期可能不完整，且單一路徑載入失敗不應被覆寫遺失；
+            // 一律以「設定既有值 + 記憶體清單」聯集，再排除近期移除項目，避免遺失/復活/重複
+            settings.RecentlyRemovedFolders = [.. RecentlyRemovedFolders];
+            var removed = settings.RecentlyRemovedFolders.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            settings.ImportedFolders =
+            [
+                .. MergeFolders(settings.ImportedFolders, Projects.Select(p => p.FolderPath))
+                    .Where(folder => !removed.Contains(folder))
+            ];
+
+            var frontendConfigs = InternalProjects.Concat(ExternalProjects).Select(p => p.ToConfig()).ToList();
+            if (_frontendProjectsLoaded)
+            {
+                settings.FrontendProjects = frontendConfigs;
+            }
+            else
+            {
+                var existingPaths = settings.FrontendProjects
+                    .Select(c => c.FolderPath)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                settings.FrontendProjects =
+                    [.. settings.FrontendProjects,
+                     .. frontendConfigs.Where(c => !existingPaths.Contains(c.FolderPath))];
+            }
+        });
+    }
+
+    private static List<string> MergeFolders(IEnumerable<string> persisted, IEnumerable<string> current)
+    {
+        var merged = new List<string>(persisted);
+        var seen = merged.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var folder in current)
+        {
+            if (seen.Add(folder)) merged.Add(folder);
+        }
+        return merged;
     }
 
     private void UpdateCounts()
@@ -449,40 +501,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    internal void AppendLog(string message)
-    {
-        _pendingLogQueue.Enqueue(message);
-        if (Interlocked.Exchange(ref _isLogFlushScheduled, 1) == 1)
-            return;
-
-        Application.Current?.Dispatcher.InvokeAsync(FlushPendingLogs);
-    }
-
-    private void FlushPendingLogs()
-    {
-        try
-        {
-            while (_pendingLogQueue.TryDequeue(out var line))
-                AppendLogLine(line);
-        }
-        finally
-        {
-            Interlocked.Exchange(ref _isLogFlushScheduled, 0);
-            if (!_pendingLogQueue.IsEmpty && Interlocked.Exchange(ref _isLogFlushScheduled, 1) == 0)
-                Application.Current?.Dispatcher.InvokeAsync(FlushPendingLogs);
-        }
-    }
-
-    private void AppendLogLine(string message)
-    {
-        LogLines.Add(message);
-        if (LogLines.Count <= 5000) return;
-        // Skip(500) 後 Clear + re-add：O(n) 位移 vs 原本 500 次 RemoveAt(0) 各自 O(n) 位移
-        var kept = LogLines.Skip(500).ToArray();
-        LogLines.Clear();
-        foreach (var line in kept)
-            LogLines.Add(line);
-    }
+    internal void AppendLog(string message) => BackendLog.Append(message);
 
     public List<string> ParsePortLinks(string? ports)
     {
@@ -525,6 +544,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _operationCts?.Cancel();
         _operationCts?.Dispose();
         StopLogStream();
+        _frontendProcesses.OutputReceived -= OnFrontendOutput;
+        _frontendProcesses.StateChanged -= OnFrontendStateChanged;
+        _frontendProcesses.StopAll();
         _monitor.ContainersUpdated -= OnContainersUpdated;
         _monitor.ContainerCrashed -= OnContainerCrashed;
         _monitor.Dispose();

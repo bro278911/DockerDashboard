@@ -34,7 +34,7 @@ public static class PortListenerScanner
 
     public static IReadOnlyList<PortListener> Scan(int port)
     {
-        using var process = Process.Start(new ProcessStartInfo
+        var psi = new ProcessStartInfo
         {
             FileName = "netstat",
             // 不加 -p TCP：該參數只回 IPv4 列，會漏掉只綁 IPv6 的服務（如 [::]:3001）；
@@ -43,7 +43,8 @@ public static class PortListenerScanner
             RedirectStandardOutput = true,
             UseShellExecute = false,
             CreateNoWindow = true
-        }) ?? throw new InvalidOperationException("無法啟動 netstat。");
+        };
+        using var process = ProcessLauncher.Start(psi);
 
         var output = process.StandardOutput.ReadToEnd();
         process.WaitForExit();

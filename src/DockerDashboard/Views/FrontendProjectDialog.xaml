@@ -1,0 +1,57 @@
+<Window x:Class="DockerDashboard.Views.FrontendProjectDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        Title="加入前端專案" Height="520" Width="440"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="{DynamicResource MaterialDesign.Brush.Background}"
+        TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+        FontFamily="{materialDesign:MaterialDesignFont}">
+
+    <StackPanel Margin="16">
+        <TextBlock Text="{Binding FolderPath}" FontSize="11" Foreground="Gray"
+                   TextWrapping="Wrap" Margin="0,0,0,12" />
+
+        <TextBox materialDesign:HintAssist.Hint="顯示名稱"
+                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                 Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                 Margin="0,0,0,12" />
+
+        <ComboBox x:Name="GroupCombo"
+                  materialDesign:HintAssist.Hint="群組"
+                  Style="{StaticResource MaterialDesignOutlinedComboBox}"
+                  Margin="0,0,0,12">
+            <ComboBoxItem Content="內部 (Meso)" />
+            <ComboBoxItem Content="外部 (Strato)" />
+        </ComboBox>
+
+        <TextBox materialDesign:HintAssist.Hint="Dev Server 指令"
+                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                 Text="{Binding DevCommand, UpdateSourceTrigger=PropertyChanged}"
+                 Margin="0,0,0,12" />
+
+        <TextBox materialDesign:HintAssist.Hint="Install 指令"
+                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                 Text="{Binding InstallCommand, UpdateSourceTrigger=PropertyChanged}"
+                 Margin="0,0,0,12" />
+
+        <TextBox materialDesign:HintAssist.Hint="單元測試指令"
+                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                 Text="{Binding TestCommand, UpdateSourceTrigger=PropertyChanged}"
+                 Margin="0,0,0,12" />
+
+        <TextBox materialDesign:HintAssist.Hint="E2E 指令"
+                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                 Text="{Binding E2eCommand, UpdateSourceTrigger=PropertyChanged}"
+                 Margin="0,0,0,16" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="取消" Style="{StaticResource MaterialDesignFlatButton}"
+                    Click="Cancel_Click" Margin="0,0,8,0" />
+            <Button x:Name="ConfirmButton" Content="加入"
+                    Style="{StaticResource MaterialDesignRaisedButton}"
+                    Click="Confirm_Click" />
+        </StackPanel>
+    </StackPanel>
+</Window>

@@ -64,3 +64,24 @@ public class BoolToVisibilityConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotImplementedException();
 }
+
+public class FrontendStatusToColorConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is FrontendStatus status)
+        {
+            return status switch
+            {
+                FrontendStatus.Running => new SolidColorBrush(System.Windows.Media.Color.FromRgb(76, 175, 80)),
+                FrontendStatus.Busy => new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 193, 7)),
+                FrontendStatus.Crashed => new SolidColorBrush(System.Windows.Media.Color.FromRgb(244, 67, 54)),
+                _ => new SolidColorBrush(System.Windows.Media.Color.FromRgb(158, 158, 158))
+            };
+        }
+        return new SolidColorBrush(Colors.Gray);
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotImplementedException();
+}

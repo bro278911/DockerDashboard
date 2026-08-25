@@ -96,7 +96,7 @@ public partial class MainViewModel
         IsOperating = true;
         IsCancelling = false;
         StatusMessage = statusMessage;
-        LogLines.Clear();
+        BackendLog.Clear();
         AppendLog($"[{DateTime.Now:HH:mm:ss}] {headerLog}");
 
         var errors = new ConcurrentBag<string>();
@@ -516,12 +516,7 @@ public partial class MainViewModel
             }
         }
 
-        if (!RecentlyRemovedFolders.Contains(project.FolderPath))
-        {
-            RecentlyRemovedFolders.Add(project.FolderPath);
-            if (RecentlyRemovedFolders.Count > 10)
-                RecentlyRemovedFolders.RemoveAt(0);
-        }
+        TrackRecentlyRemovedFolder(project.FolderPath);
 
         Projects.Remove(project);
 
@@ -547,20 +542,86 @@ public partial class MainViewModel
         StatusMessage = $"已移除 {project.Name}";
     }
 
+    /// <summary>把掃描結果套進既有專案物件，保留參照身分（供 Rescan 使用）</summary>
+    private static void ApplyScanResult(DockerProject target, DockerProject scanned)
+    {
+        target.Name = scanned.Name;
+        target.IsGitRepo = scanned.IsGitRepo;
+        target.CurrentBranch = scanned.CurrentBranch;
+        target.IsDirty = scanned.IsDirty;
+
+        target.ComposeFiles.Clear();
+        foreach (var composeFile in scanned.ComposeFiles)
+            target.ComposeFiles.Add(composeFile);
+    }
+
     [RelayCommand]
     private async Task RescanProjectsAsync()
     {
-        var folders = Projects.Select(p => p.FolderPath).ToList();
-        Projects.Clear();
+        // 記住掃描開始時的物件參照，供稍後判斷哪些是「掃描期間才新匯入」的
+        var originals = Projects.ToList();
+        var folders = originals.Select(p => p.FolderPath).ToList();
 
-        var results = await Task.WhenAll(
-            folders.Where(Directory.Exists).Select(f => BuildProjectAsync(f, useCache: false)));
-
-        foreach (var project in results)
+        // 先在暫存集合掃描完，成功才整批換進 Projects：直接 Clear 再 await 的話，
+        // 期間其他命令（如前端專案增修）觸發存檔會把 ImportedFolders 寫成空清單；
+        // 掃描中途拋例外更會讓 Projects 永久停在空的狀態
+        List<DockerProject> results;
+        try
         {
-            Projects.Add(project);
-            if (project.ComposeFiles.Count == 0)
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {project.Name} 未偵測到服務（docker compose config 可能失敗）");
+            results = [.. await Task.WhenAll(
+                folders.Where(Directory.Exists).Select(f => BuildProjectAsync(f, useCache: false)))];
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ 重新掃描失敗，保留原有專案清單: {ex.Message}");
+            StatusMessage = "⚠ 重新掃描失敗";
+            return;
+        }
+
+        // 依「掃描結束當下」的清單合併，不是拿掃描開始時的舊快照整批覆蓋：
+        // 掃描期間使用者可能匯入新專案（會被舊快照抹掉）或移除專案（會被舊快照復活）。
+        // 用物件參照而非路徑判斷是否為掃描期間新增，否則「資料夾已不存在、因此沒有掃描結果」
+        // 的失效專案會被誤認成新匯入而永久保留，失去重新掃描本該有的清除效果
+        var scannedByFolder = results.ToDictionary(
+            p => p.FolderPath, StringComparer.OrdinalIgnoreCase);
+
+        // 保留原物件參照、只更新其內容：換成新實例的話，掃描期間正在進行的「移除專案」
+        // 拿的是舊參照，Projects.Remove 會失敗，使用者要求刪掉的專案還留在清單上
+        var stale = new List<DockerProject>();
+        foreach (var existing in Projects)
+        {
+            if (!originals.Any(o => ReferenceEquals(o, existing)))
+                continue; // 掃描期間新匯入，原樣保留
+
+            if (scannedByFolder.TryGetValue(existing.FolderPath, out var rescanned))
+            {
+                ApplyScanResult(existing, rescanned);
+                if (existing.ComposeFiles.Count == 0)
+                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {existing.Name} 未偵測到服務（docker compose config 可能失敗）");
+            }
+            else
+            {
+                stale.Add(existing); // 資料夾已失效
+            }
+        }
+
+        foreach (var project in stale)
+        {
+            Projects.Remove(project);
+            TrackRecentlyRemovedFolder(project.FolderPath);
+        }
+
+        if (stale.Count > 0)
+        {
+            var staleFolders = stale
+                .Select(project => project.FolderPath)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            await _settingsService.UpdateAsync(settings =>
+            {
+                settings.ImportedFolders =
+                    [.. settings.ImportedFolders.Where(folder => !staleFolders.Contains(folder))];
+                settings.RecentlyRemovedFolders = [.. RecentlyRemovedFolders];
+            });
         }
 
         _fastDevReload.ClearAll();
@@ -999,8 +1060,8 @@ public partial class MainViewModel
                 RedirectStandardError = true,
                 CreateNoWindow = true
             };
-            using var p = System.Diagnostics.Process.Start(psi);
-            _dotnetSdkAvailable = p != null && (await Task.Run(async () => { await p.WaitForExitAsync(); return p.ExitCode; })) == 0;
+            using var p = ProcessLauncher.Start(psi);
+            _dotnetSdkAvailable = (await Task.Run(async () => { await p.WaitForExitAsync(); return p.ExitCode; })) == 0;
         }
         catch { _dotnetSdkAvailable = false; }
         _dotnetSdkChecked = true;
@@ -1059,7 +1120,7 @@ public partial class MainViewModel
     {
         if (string.IsNullOrEmpty(url)) return;
 
-        Process.Start(new ProcessStartInfo
+        ProcessLauncher.StartDetached(new ProcessStartInfo
         {
             FileName = url,
             UseShellExecute = true

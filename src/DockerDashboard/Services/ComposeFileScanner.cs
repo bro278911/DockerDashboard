@@ -129,8 +129,7 @@ public class ComposeFileScanner
                 psi.ArgumentList.Add("json");
             }
 
-            using var process = new Process { StartInfo = psi };
-            process.Start();
+            using var process = ProcessLauncher.Start(psi);
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 

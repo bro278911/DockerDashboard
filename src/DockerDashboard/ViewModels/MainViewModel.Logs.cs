@@ -16,17 +16,6 @@ public partial class MainViewModel
     private ProcessStream? _logProcess;
     private CancellationTokenSource? _logCts;
 
-    partial void OnLogFilterChanged(string value)
-    {
-        LogView?.Refresh();
-    }
-
-    private bool LogFilterPredicate(object item)
-    {
-        if (string.IsNullOrWhiteSpace(LogFilter)) return true;
-        return item is string line && line.Contains(LogFilter, StringComparison.OrdinalIgnoreCase);
-    }
-
     partial void OnSelectedServiceChanged(DockerService? value)
     {
         if (value != null)
@@ -43,7 +32,7 @@ public partial class MainViewModel
     {
         if (service == null) return;
         StopLogStream();
-        LogLines.Clear();
+        BackendLog.Clear();
 
         var containerName = !string.IsNullOrEmpty(service.ContainerId)
             ? service.ContainerId
@@ -57,7 +46,9 @@ public partial class MainViewModel
             ? _dockerCli.StartLogStream(containerName)
             : _dockerCli.StartComposeLogStream(service.WorkingDirectory, service.Name);
 
-        Task.Run(() => ReadLogStreamAsync(_logProcess, _logCts.Token));
+        var process = _logProcess!;
+        var cts = _logCts!;
+        Task.Run(() => ProcessOutputReader.ReadAllAsync(process, AppendLog, cts.Token));
         StatusMessage = $"正在串流 {service.Name} 的日誌...";
     }
 
@@ -71,7 +62,7 @@ public partial class MainViewModel
     [RelayCommand]
     private void ClearLogs()
     {
-        LogLines.Clear();
+        BackendLog.Clear();
     }
 
     [RelayCommand]
@@ -86,30 +77,9 @@ public partial class MainViewModel
 
         if (dialog.ShowDialog() != true) return;
 
-        var snapshot = LogLines.ToArray();
+        var snapshot = BackendLog.Lines.ToArray();
         await File.WriteAllLinesAsync(dialog.FileName, snapshot);
         StatusMessage = $"日誌已匯出到 {dialog.FileName}";
-    }
-
-    private async Task ReadLogStreamAsync(ProcessStream stream, CancellationToken ct)
-    {
-        try
-        {
-            await Task.WhenAll(
-                ReadStreamAsync(stream.StandardOutput, ct),
-                ReadStreamAsync(stream.StandardError, ct));
-        }
-        catch (OperationCanceledException) { }
-    }
-
-    private async Task ReadStreamAsync(System.IO.StreamReader reader, CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            var line = await reader.ReadLineAsync(ct);
-            if (line == null) break;
-            AppendLog(line);
-        }
     }
 
     [RelayCommand]
@@ -124,9 +94,9 @@ public partial class MainViewModel
     [RelayCommand]
     private void CopyAllLogs()
     {
-        if (LogLines.Count == 0) return;
-        System.Windows.Clipboard.SetText(string.Join(Environment.NewLine, LogLines));
-        StatusMessage = $"已複製全部 {LogLines.Count} 行日誌";
+        if (BackendLog.Lines.Count == 0) return;
+        System.Windows.Clipboard.SetText(string.Join(Environment.NewLine, BackendLog.Lines));
+        StatusMessage = $"已複製全部 {BackendLog.Lines.Count} 行日誌";
     }
 
     internal void StopLogStream()

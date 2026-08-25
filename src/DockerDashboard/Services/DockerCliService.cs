@@ -154,10 +154,9 @@ public class DockerCliService : IDockerCliService
         {
             var psi = CreatePsi("docker", ["ps", "-a", "--format", "{{json .}}"], null);
 
-            using var process = new Process { StartInfo = psi };
+            using var process = ProcessLauncher.Start(psi);
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
-            process.Start();
 
             string stdout;
             try
@@ -228,8 +227,7 @@ public class DockerCliService : IDockerCliService
     {
         var psi = CreatePsi("docker", ["logs", "-f", "--tail", "200", containerNameOrId], null);
 
-        var process = new Process { StartInfo = psi };
-        process.Start();
+        var process = ProcessLauncher.Start(psi);
         return new ProcessStream(process);
     }
 
@@ -238,8 +236,7 @@ public class DockerCliService : IDockerCliService
         var composeArgs = BuildComposeArgs(workingDirectory, ["logs", "-f", "--tail", "200", serviceName]);
         var psi = CreatePsi(ComposeCommand, composeArgs, workingDirectory);
 
-        var process = new Process { StartInfo = psi };
-        process.Start();
+        var process = ProcessLauncher.Start(psi);
         return new ProcessStream(process);
     }
 
@@ -255,8 +252,7 @@ public class DockerCliService : IDockerCliService
             foreach (var kv in buildEnv)
                 psi.Environment[kv.Key] = kv.Value;
 
-        var process = new Process { StartInfo = psi };
-        process.Start();
+        var process = ProcessLauncher.Start(psi);
         return new ProcessStream(process);
     }
 
@@ -350,8 +346,7 @@ public class DockerCliService : IDockerCliService
     {
         var psi = CreatePsi("docker", ["events", "--format", "{{json .}}", "--filter", "type=container"], null);
 
-        var process = new Process { StartInfo = psi };
-        process.Start();
+        var process = ProcessLauncher.Start(psi);
         return new ProcessStream(process);
     }
 
@@ -382,11 +377,9 @@ public class DockerCliService : IDockerCliService
     {
         var psi = CreatePsi(command, args, workingDirectory);
 
-        using var process = new Process { StartInfo = psi };
+        using var process = ProcessLauncher.Start(psi);
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(timeout ?? TimeSpan.FromMinutes(3));
-
-        process.Start();
 
         string stdout, stderr;
         try
@@ -431,7 +424,7 @@ public class DockerCliService : IDockerCliService
             foreach (var kv in GetBuildEnv(BuildKitParallelism))
                 psi.Environment[kv.Key] = kv.Value;
 
-        using var process = new Process { StartInfo = psi };
+        using var process = ProcessLauncher.Start(psi);
         var output = new StringBuilder();
 
         process.OutputDataReceived += (_, e) =>
@@ -451,7 +444,6 @@ public class DockerCliService : IDockerCliService
             }
         };
 
-        process.Start();
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
