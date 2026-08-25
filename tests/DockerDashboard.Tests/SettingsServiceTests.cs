@@ -30,7 +30,7 @@ public class SettingsServiceTests
 
             Assert.NotNull(restored);
             Assert.Equal(50, restored!.ImportedFolders.Count);
-            Assert.False(File.Exists(path + ".tmp")); // 暫存檔不應殘留
+            Assert.Empty(Directory.EnumerateFiles(dir, "settings.json.*.tmp")); // 暫存檔不應殘留
         }
         finally
         {

@@ -45,7 +45,7 @@ public partial class MainViewModel
     internal void AppendFrontendLog(FrontendProject project, string message)
     {
         var buffer = project.Group == FrontendGroup.Internal ? InternalLog : ExternalLog;
-        buffer.Append(message);
+        buffer.Append($"[{project.Name}] {message}");
     }
 
     [RelayCommand]
@@ -93,7 +93,7 @@ public partial class MainViewModel
     // manager 在背景執行緒觸發此事件；LogBuffer.Append 內部已用 ConcurrentQueue +
     // Dispatcher 排程收斂寫入，故此處不必再包一層 InvokeAsync
     private void OnFrontendOutput(object? sender, FrontendOutputEventArgs e)
-        => AppendFrontendLog(e.Project, $"[{e.Project.Name}] {e.Line}");
+        => AppendFrontendLog(e.Project, e.Line);
 
     private void OnFrontendStateChanged(object? sender, FrontendStateEventArgs e)
     {
@@ -112,7 +112,7 @@ public partial class MainViewModel
                 if (e.State == FrontendProcessState.Crashed)
                 {
                     AppendFrontendLog(e.Project,
-                        $"[{DateTime.Now:HH:mm:ss}] ⚠️ [{e.Project.Name}] dev server 意外結束（exit code {e.ExitCode}）");
+                        $"[{DateTime.Now:HH:mm:ss}] ⚠️ dev server 意外結束（exit code {e.ExitCode}）");
                     try
                     {
                         _notifyIcon?.ShowBalloonTip(
@@ -125,7 +125,7 @@ public partial class MainViewModel
                 }
                 else if (e.State == FrontendProcessState.Stopped)
                 {
-                    AppendFrontendLog(e.Project, $"[{DateTime.Now:HH:mm:ss}] ⏹ [{e.Project.Name}] dev server 已停止");
+                    AppendFrontendLog(e.Project, $"[{DateTime.Now:HH:mm:ss}] ⏹ dev server 已停止");
                 }
 
                 UpdateFrontendRunningLabels();
@@ -139,14 +139,14 @@ public partial class MainViewModel
                     // 否則使用者取消會被誤顯示成依 exit code 判定的失敗訊息
                     if (e.UserStopped)
                     {
-                        AppendFrontendLog(e.Project, $"[{DateTime.Now:HH:mm:ss}] ⏹ [{e.Project.Name}] {e.Label} 已取消");
+                        AppendFrontendLog(e.Project, $"[{DateTime.Now:HH:mm:ss}] ⏹ {e.Label} 已取消");
                         StatusMessage = $"⏹ {e.Project.Name} {e.Label} 已取消";
                     }
                     else
                     {
                         var icon = e.ExitCode == 0 ? "✅" : "❌";
                         AppendFrontendLog(e.Project,
-                            $"[{DateTime.Now:HH:mm:ss}] {icon} [{e.Project.Name}] {e.Label} 結束（exit code {e.ExitCode}）");
+                            $"[{DateTime.Now:HH:mm:ss}] {icon} {e.Label} 結束（exit code {e.ExitCode}）");
                         StatusMessage = $"{icon} {e.Project.Name} {e.Label} 結束（exit code {e.ExitCode}）";
                     }
                 }
@@ -191,13 +191,13 @@ public partial class MainViewModel
                     if (!IsDevStartAttemptActive(project, attempt))
                         return;
                     AppendFrontendLog(project,
-                        $"[{DateTime.Now:HH:mm:ss}] ▶ [{project.Name}] 啟動 dev server（{project.DevCommand}）於 {project.FolderPath}");
+                        $"[{DateTime.Now:HH:mm:ss}] ▶ 啟動 dev server（{project.DevCommand}）於 {project.FolderPath}");
                     StatusMessage = $"▶ {project.Name} dev server 啟動中（{project.BranchDisplay}）";
                     UpdateFrontendRunningLabels();
                     break;
                 case StartResult.Failed failed:
                     project.Status = FrontendStatus.Crashed;
-                    AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ❌ [{project.Name}] 啟動失敗: {failed.Message}");
+                    AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ❌ 啟動失敗: {failed.Message}");
                     StatusMessage = $"❌ {project.Name} 啟動失敗";
                     break;
             }
@@ -213,9 +213,15 @@ public partial class MainViewModel
     private async Task StopFrontendAsync(FrontendProject? project)
     {
         if (project == null) return;
-        InvalidateDevStartAttempt(project);
+        var stopAttempt = InvalidateDevStartAttempt(project);
         if (!await _frontendProcesses.StopDevAsync(project))
+        {
             StatusMessage = $"⚠ {project.Name} 停止未完成，行程可能仍在執行";
+            return;
+        }
+
+        if (IsCurrentDevStartAttempt(project, stopAttempt))
+            project.IsStarting = false;
     }
 
     [RelayCommand]
@@ -235,11 +241,11 @@ public partial class MainViewModel
         switch (result)
         {
             case StartResult.Started:
-                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ▶ [{project.Name}] {label}（{command}）");
+                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ▶ {label}（{command}）");
                 StatusMessage = $"▶ {project.Name} 執行 {label} 中...";
                 break;
             case StartResult.Failed failed:
-                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ❌ [{project.Name}] {label} 啟動失敗: {failed.Message}");
+                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ❌ {label} 啟動失敗: {failed.Message}");
                 StatusMessage = $"❌ {project.Name} {label} 啟動失敗";
                 break;
         }
@@ -401,10 +407,8 @@ public partial class MainViewModel
         return next;
     }
 
-    private void InvalidateDevStartAttempt(FrontendProject project)
-    {
-        _devStartAttempts[project] = _devStartAttempts.TryGetValue(project, out var current) ? current + 1 : 1;
-    }
+    private int InvalidateDevStartAttempt(FrontendProject project)
+        => _devStartAttempts[project] = _devStartAttempts.TryGetValue(project, out var current) ? current + 1 : 1;
 
     private bool IsCurrentDevStartAttempt(FrontendProject project, int attempt)
         => _devStartAttempts.TryGetValue(project, out var current) && current == attempt;

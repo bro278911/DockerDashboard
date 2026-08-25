@@ -202,8 +202,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     }
                 }));
 
+        var removedFolders = RecentlyRemovedFolders.ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var project in loaded.OfType<DockerProject>())
         {
+            if (removedFolders.Contains(project.FolderPath))
+                continue;
             if (Projects.Any(p => p.FolderPath.Equals(project.FolderPath, StringComparison.OrdinalIgnoreCase)))
                 continue;
             Projects.Add(project);
@@ -344,6 +347,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
             f => f.Equals(folder, StringComparison.OrdinalIgnoreCase));
         if (existing != null)
             RecentlyRemovedFolders.Remove(existing);
+    }
+
+    internal void TrackRecentlyRemovedFolder(string folder)
+    {
+        RemoveRecentFolder(folder);
+        RecentlyRemovedFolders.Add(folder);
+        if (RecentlyRemovedFolders.Count > 10)
+            RecentlyRemovedFolders.RemoveAt(0);
     }
 
     internal Task SaveSettingsAsync()

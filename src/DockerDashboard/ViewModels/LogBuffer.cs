@@ -4,7 +4,9 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Data;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DockerDashboard.ViewModels;
@@ -56,20 +58,36 @@ public sealed partial class LogBuffer : ObservableObject
     private void ScheduleFlush()
     {
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher == null)
+        if (dispatcher == null || dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
         {
-            // 清空與歸零之間仍可能有人入隊，故比照 Flush 的交握：歸零後再檢查一次，
-            // 搶回處理權就再清一輪，直到「旗標為 0 時佇列確實是空的」
-            do
-            {
-                while (_pending.TryDequeue(out _)) { }
-                Interlocked.Exchange(ref _flushScheduled, 0);
-            }
-            while (!_pending.IsEmpty && Interlocked.Exchange(ref _flushScheduled, 1) == 0);
+            DropPending();
             return;
         }
 
-        dispatcher.InvokeAsync(Flush);
+        try
+        {
+            var operation = dispatcher.InvokeAsync(Flush);
+            if (operation.Status == DispatcherOperationStatus.Aborted)
+            {
+                DropPending();
+                return;
+            }
+
+            _ = operation.Task.ContinueWith(
+                static (task, state) =>
+                {
+                    if (!task.IsCanceled && !task.IsFaulted) return;
+                    ((LogBuffer)state!).DropPending();
+                },
+                this,
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+        catch (InvalidOperationException)
+        {
+            DropPending();
+        }
     }
 
     private void Flush()
@@ -93,7 +111,19 @@ public sealed partial class LogBuffer : ObservableObject
         if (Lines.Count <= 5000) return;
         // 裁剪走 ReplaceAll：只發一次 Reset 通知。逐筆 re-add 會在高輸出量的 dev server 下
         // 每次裁剪產生約 4500 次集合通知與過濾判斷，造成週期性卡頓
-        Lines.ReplaceAll(Lines.Skip(500).ToArray());
+        Lines.ReplaceAll(Lines.Skip(Lines.Count - 4500).ToArray());
+    }
+
+    private void DropPending()
+    {
+        // 清空與歸零之間仍可能有人入隊，故比照 Flush 的交握：歸零後再檢查一次，
+        // 搶回處理權就再清一輪，直到「旗標為 0 時佇列確實是空的」
+        do
+        {
+            while (_pending.TryDequeue(out _)) { }
+            Interlocked.Exchange(ref _flushScheduled, 0);
+        }
+        while (!_pending.IsEmpty && Interlocked.Exchange(ref _flushScheduled, 1) == 0);
     }
 
     // 一併清掉排隊中的行，否則按下清除後、下一次 Flush 會立刻把當時已排隊的內容補回來，

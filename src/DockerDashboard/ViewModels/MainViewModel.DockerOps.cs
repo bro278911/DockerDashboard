@@ -516,12 +516,7 @@ public partial class MainViewModel
             }
         }
 
-        if (!RecentlyRemovedFolders.Contains(project.FolderPath))
-        {
-            RecentlyRemovedFolders.Add(project.FolderPath);
-            if (RecentlyRemovedFolders.Count > 10)
-                RecentlyRemovedFolders.RemoveAt(0);
-        }
+        TrackRecentlyRemovedFolder(project.FolderPath);
 
         Projects.Remove(project);
 
@@ -611,7 +606,23 @@ public partial class MainViewModel
         }
 
         foreach (var project in stale)
+        {
             Projects.Remove(project);
+            TrackRecentlyRemovedFolder(project.FolderPath);
+        }
+
+        if (stale.Count > 0)
+        {
+            var staleFolders = stale
+                .Select(project => project.FolderPath)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            await _settingsService.UpdateAsync(settings =>
+            {
+                settings.ImportedFolders =
+                    [.. settings.ImportedFolders.Where(folder => !staleFolders.Contains(folder))];
+                settings.RecentlyRemovedFolders = [.. RecentlyRemovedFolders];
+            });
+        }
 
         _fastDevReload.ClearAll();
         // 先刷新容器狀態再還原旗標：新掃出的服務狀態是 Unknown，先還原會把在跑的 Fast Dev 旗標誤清

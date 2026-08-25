@@ -11,8 +11,8 @@ public class LogBufferTests
         for (var i = 0; i < 5001; i++)
             buffer.AppendLine($"line-{i}");
 
-        Assert.Equal(4501, buffer.Lines.Count);
-        Assert.Equal("line-500", buffer.Lines[0]);
+        Assert.Equal(4500, buffer.Lines.Count);
+        Assert.Equal("line-501", buffer.Lines[0]);
         Assert.Equal("line-5000", buffer.Lines[^1]);
     }
 
