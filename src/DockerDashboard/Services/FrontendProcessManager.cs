@@ -74,6 +74,8 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
                 System.Diagnostics.Debug.WriteLine(
                     $"[FrontendProcessManager] StateChanged 訂閱者拋出例外: {ex.Message}");
             }
+
+            started.Monitor = Task.Run(() => MonitorAsync(project, FrontendProcessKind.Dev, started));
         }
 
         return Task.FromResult(result);
@@ -110,6 +112,8 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
                 System.Diagnostics.Debug.WriteLine(
                     $"[FrontendProcessManager] StateChanged 訂閱者拋出例外: {ex.Message}");
             }
+
+            started.Monitor = Task.Run(() => MonitorAsync(project, FrontendProcessKind.OneShot, started));
         }
 
         return Task.FromResult(result);
@@ -133,7 +137,14 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
         foreach (var entry in entries)
         {
             entry.UserStopped = true;
-            entry.Cts.Cancel();
+            try
+            {
+                entry.Cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // 可能與 MonitorAsync 收尾競態：Cts 已由另一執行緒釋放，視同已取消
+            }
             entry.Stream.Dispose(); // 內含 Kill(entireProcessTree: true)
             entry.Cts.Dispose();
         }
@@ -162,7 +173,6 @@ public sealed class FrontendProcessManager(NodeProcessService nodeService)
             Label = label,
         };
         _entries[(project, kind)] = entry;
-        entry.Monitor = Task.Run(() => MonitorAsync(project, kind, entry));
 
         started = entry;
         return new StartResult.Started();
