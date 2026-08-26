@@ -16,7 +16,10 @@ public partial class FrontendProjectDialog : Window
         Title = _title;
         ConfirmButton.Content = isEdit ? "儲存" : "加入";
         DataContext = project;
-        GroupCombo.SelectedIndex = (int)project.Group;
+        var initialGroup = isEdit
+            ? project.Group
+            : FrontendProject.GuessGroupFromPath(project.FolderPath);
+        GroupCombo.SelectedIndex = initialGroup is { } group ? (int)group : -1;
     }
 
     private void Confirm_Click(object sender, RoutedEventArgs e)
@@ -27,6 +30,14 @@ public partial class FrontendProjectDialog : Window
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+
+        if (GroupCombo.SelectedIndex < 0)
+        {
+            System.Windows.MessageBox.Show("請選擇群組", _title,
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         _project.Group = (FrontendGroup)GroupCombo.SelectedIndex;
         DialogResult = true;
     }
