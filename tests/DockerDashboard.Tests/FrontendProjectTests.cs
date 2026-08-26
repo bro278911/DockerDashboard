@@ -4,6 +4,20 @@ namespace DockerDashboard.Tests;
 
 public class FrontendProjectTests
 {
+    [Theory]
+    [InlineData(@"D:\repo\Meso", FrontendGroup.Internal)]
+    [InlineData(@"D:\repo\feature\STRATO-client", FrontendGroup.External)]
+    [InlineData(@"D:\repo\ordinary-client", null)]
+    [InlineData(@"D:\repo\meso-to-strato", null)]
+    public void GuessGroupFromPath_依路徑關鍵字回傳明確群組(
+        string folderPath,
+        FrontendGroup? expected)
+    {
+        var result = FrontendProject.GuessGroupFromPath(folderPath);
+
+        Assert.Equal(expected, result);
+    }
+
     [Fact]
     public void ToConfig_FromConfig_往返保留所有欄位()
     {

@@ -18,6 +18,19 @@ public enum FrontendStatus
 
 public partial class FrontendProject : ObservableObject
 {
+    public static FrontendGroup? GuessGroupFromPath(string folderPath)
+    {
+        var containsMeso = folderPath.Contains("meso", StringComparison.OrdinalIgnoreCase);
+        var containsStrato = folderPath.Contains("strato", StringComparison.OrdinalIgnoreCase);
+
+        return (containsMeso, containsStrato) switch
+        {
+            (true, false) => FrontendGroup.Internal,
+            (false, true) => FrontendGroup.External,
+            _ => null,
+        };
+    }
+
     [ObservableProperty]
     private string _name = string.Empty;
 
