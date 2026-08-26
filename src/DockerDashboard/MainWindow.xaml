@@ -37,7 +37,14 @@
                                HorizontalAlignment="Right" />
                 </DockPanel>
                 <TextBlock Text="{Binding FolderName}" FontSize="11" Foreground="Gray"
-                           Margin="18,2,0,4" />
+                           Margin="18,2,0,0" />
+                <DockPanel Margin="18,1,0,4" ToolTip="{Binding FolderPath}">
+                    <materialDesign:PackIcon Kind="FolderOutline" Width="11" Height="11"
+                                              Foreground="#9E9E9E" VerticalAlignment="Center"
+                                              Margin="0,0,3,0" />
+                    <TextBlock Text="{Binding FolderPath}" FontSize="9.5" Foreground="#9E9E9E"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                </DockPanel>
                 <StackPanel Orientation="Horizontal">
                     <Button Content="啟動" Height="26" Padding="8,0"
                             Style="{StaticResource MaterialDesignFlatButton}"
