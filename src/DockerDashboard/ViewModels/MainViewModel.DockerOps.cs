@@ -884,6 +884,7 @@ public partial class MainViewModel
             if (ct.IsCancellationRequested) return false;
             if (upExit != 0)
             {
+                StatusMessage = $"⚠ Fast Dev 啟動失敗 (exit {upExit})";
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ Fast Dev 啟動失敗 (exit {upExit})");
                 return false;
             }

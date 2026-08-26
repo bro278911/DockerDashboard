@@ -29,7 +29,7 @@ public partial class MainWindow : Window
         _viewModel.SetNotifyIcon(_notifyIcon);
     }
 
-    // 小螢幕（或縮小比例）下，固定的 750x1200 初始尺寸可能超出可用工作區，
+    // 小螢幕（或縮小比例）下，固定的 1200x750 初始尺寸可能超出可用工作區，
     // 導致標題列的最小化/關閉按鈕被推出畫面外。啟動時依「主螢幕」可用工作區收斂初始尺寸
     // （SystemParameters.WorkArea 僅反映主螢幕，多螢幕情境為近似值）。
     // 只調整初始 Width/Height，不設 MaxWidth/MaxHeight，避免之後最大化或移到更大螢幕時被永久鎖死。
