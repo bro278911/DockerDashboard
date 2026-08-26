@@ -261,18 +261,21 @@ public partial class MainViewModel
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ▶ 啟動 {service.Name}");
 
         bool wasCancelled = false;
+        // 成功/失敗訊息延後到 ForceRefreshAsync 刷新容器清單「之後」才顯示，
+        // 避免使用者在容器列表還沒轉為執行中之前就看到「已啟動」而誤會提早結束
+        string? resultMessage = null;
         try
         {
             var (exitCode, _) = await _dockerCli.ComposeUpFastWithLogAsync(
                 service.WorkingDirectory, AppendLog, service.Name, ct);
             if (exitCode != 0)
             {
-                StatusMessage = $"⚠ {service.Name} 啟動失敗";
+                resultMessage = $"⚠ {service.Name} 啟動失敗";
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {service.Name} 啟動失敗 (exit code: {exitCode})");
             }
             else
             {
-                StatusMessage = $"✅ {service.Name} 已啟動";
+                resultMessage = $"✅ {service.Name} 已啟動";
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {service.Name} 啟動完成");
             }
         }
@@ -282,7 +285,7 @@ public partial class MainViewModel
         }
         catch (Exception ex)
         {
-            StatusMessage = $"⚠ {service.Name} 啟動失敗: {ex.Message}";
+            resultMessage = $"⚠ {service.Name} 啟動失敗: {ex.Message}";
             AppendLog($"[例外] {ex.Message}");
         }
         finally
@@ -296,8 +299,7 @@ public partial class MainViewModel
             IsOperating = false;
         }
 
-        if (wasCancelled)
-            StatusMessage = "⏹ 操作已取消";
+        StatusMessage = wasCancelled ? "⏹ 操作已取消" : resultMessage ?? StatusMessage;
     }
 
     [RelayCommand]
@@ -315,18 +317,19 @@ public partial class MainViewModel
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ■ 停止 {service.Name}");
 
         bool wasCancelled = false;
+        string? resultMessage = null;
         try
         {
             var (exitCode, _) = await _dockerCli.ComposeStopWithLogAsync(
                 service.WorkingDirectory, AppendLog, service.Name, ct);
             if (exitCode != 0)
             {
-                StatusMessage = $"⚠ {service.Name} 停止失敗";
+                resultMessage = $"⚠ {service.Name} 停止失敗";
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {service.Name} 停止失敗 (exit code: {exitCode})");
             }
             else
             {
-                StatusMessage = $"✅ {service.Name} 已停止";
+                resultMessage = $"✅ {service.Name} 已停止";
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {service.Name} 停止完成");
             }
         }
@@ -336,7 +339,7 @@ public partial class MainViewModel
         }
         catch (Exception ex)
         {
-            StatusMessage = $"⚠ {service.Name} 停止失敗: {ex.Message}";
+            resultMessage = $"⚠ {service.Name} 停止失敗: {ex.Message}";
             AppendLog($"[例外] {ex.Message}");
         }
         finally
@@ -350,8 +353,7 @@ public partial class MainViewModel
             IsOperating = false;
         }
 
-        if (wasCancelled)
-            StatusMessage = "⏹ 操作已取消";
+        StatusMessage = wasCancelled ? "⏹ 操作已取消" : resultMessage ?? StatusMessage;
     }
 
     [RelayCommand]
@@ -369,18 +371,19 @@ public partial class MainViewModel
         AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔄 重啟 {service.Name}（不重建 image）");
 
         bool wasCancelled = false;
+        string? resultMessage = null;
         try
         {
             var (exitCode, _) = await _dockerCli.ComposeRestartWithLogAsync(
                 service.WorkingDirectory, AppendLog, service.Name, ct);
             if (exitCode != 0)
             {
-                StatusMessage = $"⚠ {service.Name} 重啟失敗";
+                resultMessage = $"⚠ {service.Name} 重啟失敗";
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {service.Name} 重啟失敗 (exit code: {exitCode})");
             }
             else
             {
-                StatusMessage = $"✅ {service.Name} 已重啟";
+                resultMessage = $"✅ {service.Name} 已重啟";
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {service.Name} 重啟完成");
             }
         }
@@ -390,7 +393,7 @@ public partial class MainViewModel
         }
         catch (Exception ex)
         {
-            StatusMessage = $"⚠ {service.Name} 重啟失敗: {ex.Message}";
+            resultMessage = $"⚠ {service.Name} 重啟失敗: {ex.Message}";
             AppendLog($"[例外] {ex.Message}");
         }
         finally
@@ -404,8 +407,7 @@ public partial class MainViewModel
             IsOperating = false;
         }
 
-        if (wasCancelled)
-            StatusMessage = "⏹ 操作已取消";
+        StatusMessage = wasCancelled ? "⏹ 操作已取消" : resultMessage ?? StatusMessage;
     }
 
     [RelayCommand]
@@ -431,18 +433,19 @@ public partial class MainViewModel
         AppendLog($"[{DateTime.Now:HH:mm:ss}] 🔨 重建重啟 {service.Name}（重新 build image）");
 
         bool wasCancelled = false;
+        string? resultMessage = null;
         try
         {
             var (exitCode, _) = await _dockerCli.ComposeRebuildRestartWithLogAsync(
                 service.WorkingDirectory, AppendLog, service.Name, ct);
             if (exitCode != 0)
             {
-                StatusMessage = $"⚠ {service.Name} 重建重啟失敗";
+                resultMessage = $"⚠ {service.Name} 重建重啟失敗";
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {service.Name} 重建重啟失敗 (exit code: {exitCode})");
             }
             else
             {
-                StatusMessage = $"✅ {service.Name} 已重建並重啟";
+                resultMessage = $"✅ {service.Name} 已重建並重啟";
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {service.Name} 重建重啟完成");
             }
         }
@@ -452,7 +455,7 @@ public partial class MainViewModel
         }
         catch (Exception ex)
         {
-            StatusMessage = $"⚠ {service.Name} 重建重啟失敗: {ex.Message}";
+            resultMessage = $"⚠ {service.Name} 重建重啟失敗: {ex.Message}";
             AppendLog($"[例外] {ex.Message}");
         }
         finally
@@ -466,8 +469,7 @@ public partial class MainViewModel
             IsOperating = false;
         }
 
-        if (wasCancelled)
-            StatusMessage = "⏹ 操作已取消";
+        StatusMessage = wasCancelled ? "⏹ 操作已取消" : resultMessage ?? StatusMessage;
     }
 
 
@@ -826,6 +828,8 @@ public partial class MainViewModel
         IsOperating = true;
         IsCancelling = false;
 
+        // 成功訊息延後到 ForceRefreshAsync 刷新容器清單「之後」才顯示，理由同 StartServiceAsync
+        string? resultMessage = null;
         try
         {
             var fastDevServices = Projects.SelectMany(p => p.ComposeFiles).SelectMany(c => c.Services)
@@ -840,7 +844,7 @@ public partial class MainViewModel
                 StatusMessage = "正在還原（換回原 image）...";
                 var (revertExit, _) = await _dockerCli.ComposeUpAllAsync(workingDirectory, AppendLog, ct);
                 if (!ct.IsCancellationRequested)
-                    StatusMessage = revertExit == 0 ? "✅ 已離開 Fast Dev" : "⚠ 還原可能失敗";
+                    resultMessage = revertExit == 0 ? "✅ 已離開 Fast Dev" : "⚠ 還原可能失敗";
                 return revertExit == 0 && !ct.IsCancellationRequested;
             }
 
@@ -880,11 +884,12 @@ public partial class MainViewModel
             if (ct.IsCancellationRequested) return false;
             if (upExit != 0)
             {
+                StatusMessage = $"⚠ Fast Dev 啟動失敗 (exit {upExit})";
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ Fast Dev 啟動失敗 (exit {upExit})");
                 return false;
             }
             _fastDevReload.Watch(workingDirectory);
-            StatusMessage = "✅ Fast Dev 就緒（改 .cs 約 5 秒生效）";
+            resultMessage = "✅ Fast Dev 就緒（改 .cs 約 5 秒生效）";
             return true;
         }
         finally
@@ -895,12 +900,16 @@ public partial class MainViewModel
             cts.Dispose();
             IsCancelling = false;
             IsOperating = false;
+            await _monitor.ForceRefreshAsync();
             if (wasCancelled)
             {
                 StatusMessage = "⏹ Fast Dev 已取消";
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ Fast Dev 操作已取消");
             }
-            await _monitor.ForceRefreshAsync();
+            else if (resultMessage != null)
+            {
+                StatusMessage = resultMessage;
+            }
         }
     }
 
