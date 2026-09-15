@@ -1,5 +1,6 @@
 using System.IO;
 using System.Reflection;
+using System.Text;
 using DockerDashboard.Models;
 using DockerDashboard.Services;
 using Xunit;
@@ -8,6 +9,20 @@ namespace DockerDashboard.Tests;
 
 public class ComposeFileScannerTests
 {
+    [Fact]
+    public void CreateDockerComposeProcessStartInfo_以Utf8讀取輸出與錯誤()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compose-scan-桌面內容");
+
+        var psi = ComposeFileScanner.CreateDockerComposeProcessStartInfo(
+            root,
+            DockerMode.DockerDesktop,
+            "Ubuntu");
+
+        Assert.Equal(Encoding.UTF8, psi.StandardOutputEncoding);
+        Assert.Equal(Encoding.UTF8, psi.StandardErrorEncoding);
+    }
+
     [Fact]
     public void ParseJsonConfig_BuildContext未指定Dockerfile時_推導預設Dockerfile路徑()
     {

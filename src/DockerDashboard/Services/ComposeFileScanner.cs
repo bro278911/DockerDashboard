@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -86,48 +87,12 @@ public class ComposeFileScanner
         {
             var directory = Path.GetDirectoryName(filePath)!;
 
-            ProcessStartInfo psi;
-            if (DockerMode == DockerMode.Wsl2)
-            {
-                psi = new ProcessStartInfo
-                {
-                    FileName = "wsl",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                };
-                psi.ArgumentList.Add("-d");
-                psi.ArgumentList.Add(WslDistroName);
-                psi.ArgumentList.Add("--cd");
-                psi.ArgumentList.Add(DockerCliService.ConvertToWslPath(directory));
-                psi.ArgumentList.Add("--");
-                psi.ArgumentList.Add("docker");
-                psi.ArgumentList.Add("compose");
-                foreach (var arg in ComposeFileHelper.GetComposeFileArgs(directory))
-                    psi.ArgumentList.Add(arg);
-                psi.ArgumentList.Add("config");
-                psi.ArgumentList.Add("--format");
-                psi.ArgumentList.Add("json");
-            }
-            else
-            {
-                psi = new ProcessStartInfo
-                {
-                    FileName = "docker",
-                    WorkingDirectory = directory,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                };
-                psi.ArgumentList.Add("compose");
-                foreach (var arg in ComposeFileHelper.GetComposeFileArgs(directory))
-                    psi.ArgumentList.Add(arg);
-                psi.ArgumentList.Add("config");
-                psi.ArgumentList.Add("--format");
-                psi.ArgumentList.Add("json");
-            }
+            var psi = CreateDockerComposeProcessStartInfo(directory, DockerMode, WslDistroName);
+            foreach (var arg in ComposeFileHelper.GetComposeFileArgs(directory))
+                psi.ArgumentList.Add(arg);
+            psi.ArgumentList.Add("config");
+            psi.ArgumentList.Add("--format");
+            psi.ArgumentList.Add("json");
 
             using var process = ProcessLauncher.Start(psi);
 
@@ -156,6 +121,37 @@ public class ComposeFileScanner
         {
             return null;
         }
+    }
+
+    internal static ProcessStartInfo CreateDockerComposeProcessStartInfo(
+        string directory,
+        DockerMode dockerMode,
+        string wslDistroName)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = dockerMode == DockerMode.Wsl2 ? "wsl" : "docker",
+            WorkingDirectory = dockerMode == DockerMode.Wsl2 ? string.Empty : directory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+            CreateNoWindow = true
+        };
+
+        if (dockerMode == DockerMode.Wsl2)
+        {
+            psi.ArgumentList.Add("-d");
+            psi.ArgumentList.Add(wslDistroName);
+            psi.ArgumentList.Add("--cd");
+            psi.ArgumentList.Add(DockerCliService.ConvertToWslPath(directory));
+            psi.ArgumentList.Add("--");
+            psi.ArgumentList.Add("docker");
+        }
+
+        psi.ArgumentList.Add("compose");
+        return psi;
     }
 
     private ComposeFile? ParseJsonConfig(string json, string filePath, string directory)

@@ -183,10 +183,14 @@ public partial class MainViewModel
         if (!await EnsureNoPortConflictAsync(scope)) return;
 
         foreach (var group in scope
-                     .Where(s => !s.IsFastDev)
+                     .Where(ShouldEnableFastDev)
                      .GroupBy(s => s.WorkingDirectory, StringComparer.OrdinalIgnoreCase))
             await EnableFastDevServicesAsync(group.Key, group.ToList());
     }
+
+    internal static bool ShouldEnableFastDev(DockerService service) =>
+        !service.IsFastDev || service.Status is
+            ContainerStatus.Stopped or ContainerStatus.Exited or ContainerStatus.Dead;
 
     [RelayCommand]
     private async Task AllDownAsync()
