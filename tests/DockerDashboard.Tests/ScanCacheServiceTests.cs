@@ -99,6 +99,21 @@ public sealed class ScanCacheServiceTests : IDisposable
     }
 
     [Fact]
+    public void TryGet_DockerfilePath已損壞時_不使用舊快取()
+    {
+        var cache = new ScanCacheService(Path.Combine(_tempDir, "cache.json"));
+        var stamps = WriteComposeAndStamp();
+        var compose = MakeComposeFile(_tempDir);
+        compose.ProjectName = "demo";
+        compose.Services[0].DockerfilePath = Path.Combine(_tempDir, "獴?", "Dockerfile");
+        cache.Store(_tempDir, stamps, compose);
+
+        var hit = cache.TryGet(_tempDir, stamps);
+
+        Assert.Null(hit);
+    }
+
+    [Fact]
     public async Task SaveAndLoad_RoundTrips()
     {
         var cachePath = Path.Combine(_tempDir, "cache.json");
@@ -112,6 +127,29 @@ public sealed class ScanCacheServiceTests : IDisposable
         await reader.LoadAsync();
 
         Assert.NotNull(reader.TryGet(_tempDir, stamps));
+    }
+
+    [Fact]
+    public async Task SaveAndLoad_中文Dockerfile路徑完整保留()
+    {
+        var cachePath = Path.Combine(_tempDir, "cache.json");
+        var stamps = WriteComposeAndStamp();
+        var dockerfilePath = Path.Combine(_tempDir, "桌面內容", "Api", "Dockerfile");
+        Directory.CreateDirectory(Path.GetDirectoryName(dockerfilePath)!);
+        File.WriteAllText(dockerfilePath, "FROM nginx");
+        var compose = MakeComposeFile(_tempDir);
+        compose.ProjectName = "demo";
+        compose.Services[0].DockerfilePath = dockerfilePath;
+
+        var writer = new ScanCacheService(cachePath);
+        writer.Store(_tempDir, stamps, compose);
+        await writer.SaveAsync();
+
+        var reader = new ScanCacheService(cachePath);
+        await reader.LoadAsync();
+        var restored = reader.TryGet(_tempDir, stamps);
+
+        Assert.Equal(dockerfilePath, Assert.Single(Assert.IsType<ComposeFile>(restored).Services).DockerfilePath);
     }
 
     [Fact]

@@ -57,6 +57,9 @@ public sealed class ScanCacheService
         if (entry.ProjectName == null || entry.Services.Any(s => s.DockerfilePath == null))
             return null;
 
+        if (entry.Services.Any(s => !string.IsNullOrEmpty(s.DockerfilePath) && !File.Exists(s.DockerfilePath)))
+            return null;
+
         if (entry.Files.Count != currentStamps.Count)
             return null;
 

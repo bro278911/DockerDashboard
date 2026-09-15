@@ -6,6 +6,42 @@ namespace DockerDashboard.Tests;
 public class MainViewModelFastDevStateTests
 {
     [Fact]
+    public void ShouldEnableFastDev_有殘留標記但服務已停止時_仍需啟動()
+    {
+        var service = new DockerService
+        {
+            IsFastDev = true,
+            Status = ContainerStatus.Stopped
+        };
+
+        Assert.True(MainViewModel.ShouldEnableFastDev(service));
+    }
+
+    [Fact]
+    public void ShouldEnableFastDev_FastDev容器正在執行時_不重複啟動()
+    {
+        var service = new DockerService
+        {
+            IsFastDev = true,
+            Status = ContainerStatus.Running
+        };
+
+        Assert.False(MainViewModel.ShouldEnableFastDev(service));
+    }
+
+    [Fact]
+    public void ShouldEnableFastDev_FastDev容器狀態未確認時_不重複啟動()
+    {
+        var service = new DockerService
+        {
+            IsFastDev = true,
+            Status = ContainerStatus.Unknown
+        };
+
+        Assert.False(MainViewModel.ShouldEnableFastDev(service));
+    }
+
+    [Fact]
     public void PersistFastDev_啟用時加入清單與設定()
     {
         var settings = new AppSettings();
