@@ -140,13 +140,6 @@
                                       HorizontalAlignment="Right"
                                       Style="{StaticResource MaterialDesignSwitchToggleButton}" />
                     </DockPanel>
-                    <DockPanel>
-                        <Button x:Name="CheckUpdateBtn" Content="立即檢查更新" DockPanel.Dock="Left"
-                                Style="{StaticResource MaterialDesignOutlinedButton}"
-                                Click="CheckUpdate_Click" />
-                        <TextBlock x:Name="UpdateResultText" Margin="12,0,0,0" VerticalAlignment="Center"
-                                   TextWrapping="Wrap" FontSize="12" />
-                    </DockPanel>
                 </StackPanel>
 
             </StackPanel>

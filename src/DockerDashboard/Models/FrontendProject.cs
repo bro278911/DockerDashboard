@@ -57,6 +57,19 @@ public partial class FrontendProject : ObservableObject
     [NotifyPropertyChangedFor(nameof(BranchDisplay))]
     private string _currentBranch = string.Empty;
 
+    // 是否為 git 資料夾：非 git 時右鍵選單的切換分支／Pull／重新整理 Git 狀態要 disabled
+    [ObservableProperty]
+    private bool _isGitRepo;
+
+    // 是否有未提交變更：切換分支／Pull 前用來決定要不要跳警告
+    [ObservableProperty]
+    private bool _isDirty;
+
+    // 切換分支／Pull 執行中，避免重複觸發並比照 dev 啟動流程納入 IsIdle 判斷
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsIdle))]
+    private bool _isGitBusy;
+
     // dev server 狀態（Stopped/Running/Crashed）。不受一次性指令影響，避免 install/vitest/e2e
     // 結束時把 dev server 的 Crashed 覆寫掉，或 dev 崩潰時把 IsBusy 誤判為 false（見 IsOneShotRunning）
     [ObservableProperty]
@@ -114,7 +127,7 @@ public partial class FrontendProject : ObservableObject
     public string BranchDisplay => string.IsNullOrEmpty(CurrentBranch) ? "非 git" : CurrentBranch;
 
     // 沒有任何行程在跑、也不在啟動途中才可編輯：組別會決定行程追蹤、log 歸屬與同組互斥
-    public bool IsIdle => !IsDevRunning && !IsOneShotRunning && !IsStarting;
+    public bool IsIdle => !IsDevRunning && !IsOneShotRunning && !IsStarting && !IsGitBusy;
 
     public static FrontendProject FromConfig(FrontendProjectConfig config) => new()
     {

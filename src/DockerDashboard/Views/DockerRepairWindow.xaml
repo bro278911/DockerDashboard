@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        x:Name="RootWindow"
         Title="Docker 修復工具" Height="560" Width="620"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
@@ -22,11 +23,12 @@
             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                 <materialDesign:PackIcon Kind="Wrench" Width="22" Height="22"
                                          Foreground="#FF9800" VerticalAlignment="Center" />
-                <TextBlock Text="Docker 修復工具" Margin="8,0,0,0"
+                <TextBlock x:Name="TitleText" Text="Docker 修復工具" Margin="8,0,0,0"
                            Style="{StaticResource MaterialDesignHeadline6TextBlock}"
                            VerticalAlignment="Center" />
             </StackPanel>
-            <Border Background="#FFF3E0" BorderBrush="#FF9800" BorderThickness="1"
+            <Border x:Name="RepairWarningBorder"
+                    Background="#FFF3E0" BorderBrush="#FF9800" BorderThickness="1"
                     CornerRadius="4" Padding="12,8">
                 <StackPanel Orientation="Horizontal">
                     <materialDesign:PackIcon Kind="Alert" Foreground="#E65100"
@@ -40,7 +42,7 @@
         </StackPanel>
 
         <!-- 修復選項 -->
-        <StackPanel Grid.Row="1" Margin="0,0,0,12">
+        <StackPanel x:Name="RepairOptionsPanel" Grid.Row="1" Margin="0,0,0,12">
             <TextBlock Text="選擇修復項目" Style="{StaticResource MaterialDesignSubtitle1TextBlock}"
                        Margin="0,0,0,8" />
 

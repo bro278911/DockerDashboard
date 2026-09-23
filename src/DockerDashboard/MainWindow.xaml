@@ -23,6 +23,34 @@
     <!-- 前端專案列（內部/外部兩組共用） -->
     <DataTemplate x:Key="FrontendProjectTemplate">
         <materialDesign:Card Margin="4" Padding="8">
+            <materialDesign:Card.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="切換分支"
+                              Command="{Binding Data.SwitchFrontendBranchCommand, Source={StaticResource Proxy}}"
+                              CommandParameter="{Binding}"
+                              IsEnabled="{Binding IsGitRepo}">
+                        <MenuItem.Icon>
+                            <materialDesign:PackIcon Kind="SourceBranch" />
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="重新整理 Git 狀態"
+                              Command="{Binding Data.RefreshFrontendGitStatusCommand, Source={StaticResource Proxy}}"
+                              CommandParameter="{Binding}"
+                              IsEnabled="{Binding IsGitRepo}">
+                        <MenuItem.Icon>
+                            <materialDesign:PackIcon Kind="Refresh" />
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Pull"
+                              Command="{Binding Data.PullFrontendCommand, Source={StaticResource Proxy}}"
+                              CommandParameter="{Binding}"
+                              IsEnabled="{Binding IsGitRepo}">
+                        <MenuItem.Icon>
+                            <materialDesign:PackIcon Kind="CloudDownload" />
+                        </MenuItem.Icon>
+                    </MenuItem>
+                </ContextMenu>
+            </materialDesign:Card.ContextMenu>
             <StackPanel>
                 <DockPanel>
                     <TextBlock Text="●" FontSize="12" VerticalAlignment="Center"
@@ -209,6 +237,17 @@
 
                 <Separator Style="{StaticResource MaterialDesignLightSeparator}" Margin="8,0" />
 
+                <!-- 尚無新版本時顯示（ShowCheckUpdateButton = true） -->
+                <Button Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{Binding CheckUpdateCommand}"
+                        ToolTip="檢查是否有新版本"
+                        Visibility="{Binding ShowCheckUpdateButton, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon Kind="Update" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding CheckUpdateButtonText}" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
                 <!-- 發現新版本後顯示（HasUpdate = true） -->
                 <Button Style="{StaticResource MaterialDesignFlatButton}"
                         Command="{Binding InstallUpdateCommand}"
@@ -307,6 +346,14 @@
                                                       IsEnabled="{Binding IsGitRepo}">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Refresh" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="Pull"
+                                                      Command="{Binding Data.PullBackendCommand, Source={StaticResource Proxy}}"
+                                                      CommandParameter="{Binding}"
+                                                      IsEnabled="{Binding IsGitRepo}">
+                                                <MenuItem.Icon>
+                                                    <materialDesign:PackIcon Kind="CloudDownload" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <Separator />
@@ -642,6 +689,43 @@
                             <StackPanel Orientation="Horizontal">
                                 <materialDesign:PackIcon Kind="FolderPlus" VerticalAlignment="Center" />
                                 <TextBlock Text="加入前端專案" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <Separator Style="{StaticResource MaterialDesignLightSeparator}" Margin="8,0" />
+
+                        <Button Style="{StaticResource MaterialDesignFlatButton}"
+                                Command="{Binding OpenReleasePortCommand}"
+                                ToolTip="釋放被佔用的 port（結束佔用行程）">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="LanConnect" VerticalAlignment="Center" />
+                                <TextBlock Text="釋放 Port" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <Separator Style="{StaticResource MaterialDesignLightSeparator}" Margin="8,0" />
+
+                        <!-- 尚無新版本時顯示（ShowCheckUpdateButton = true） -->
+                        <Button Style="{StaticResource MaterialDesignFlatButton}"
+                                Command="{Binding CheckUpdateCommand}"
+                                ToolTip="檢查是否有新版本"
+                                Visibility="{Binding ShowCheckUpdateButton, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="Update" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding CheckUpdateButtonText}" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- 發現新版本後顯示（HasUpdate = true） -->
+                        <Button Style="{StaticResource MaterialDesignFlatButton}"
+                                Command="{Binding InstallUpdateCommand}"
+                                IsEnabled="{Binding CanInstallUpdate}"
+                                Foreground="#4CAF50"
+                                ToolTip="點擊下載並安裝更新，完成後自動重啟應用程式"
+                                Visibility="{Binding HasUpdate, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="CloudDownload" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding UpdateStatusText}" Margin="6,0,0,0" VerticalAlignment="Center" />
                             </StackPanel>
                         </Button>
                     </StackPanel>

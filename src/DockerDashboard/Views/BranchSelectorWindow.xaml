@@ -59,7 +59,7 @@
             <Button Content="取消" 
                     Style="{StaticResource MaterialDesignFlatButton}"
                     Click="Cancel_Click" Margin="0,0,8,0" />
-            <Button Content="切換分支" 
+            <Button Content="{Binding ConfirmButtonText}"
                     Style="{StaticResource MaterialDesignRaisedButton}"
                     Click="Confirm_Click"
                     IsEnabled="{Binding HasSelection}" />

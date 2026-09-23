@@ -25,10 +25,20 @@ public partial class DockerRepairWindow : Window
         Timeout = TimeSpan.FromSeconds(3)
     };
 
-    public DockerRepairWindow(IDockerCliService dockerCli)
+    public DockerRepairWindow(IDockerCliService dockerCli, bool portOnly = false)
     {
         InitializeComponent();
         _dockerCli = dockerCli;
+
+        if (portOnly)
+        {
+            RootWindow.Title = "釋放 Port";
+            TitleText.Text = "釋放 Port";
+            RepairWarningBorder.Visibility = Visibility.Collapsed;
+            RepairOptionsPanel.Visibility = Visibility.Collapsed;
+            RepairBtn.Visibility = Visibility.Collapsed;
+            Height = 380;
+        }
     }
 
     private async void Repair_Click(object sender, RoutedEventArgs e)
