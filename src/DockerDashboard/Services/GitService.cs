@@ -68,6 +68,53 @@ public class GitService : IGitService
         return (result.exitCode == 0, result.output);
     }
 
+    public async Task<GitPullResult> PullAsync(string folderPath, string remoteBranch)
+    {
+        if (await IsDirtyAsync(folderPath))
+            return new GitPullResult(false, string.Empty, BlockedByDirty: true, Restored: false, RestoreError: null, PreviousSha: null);
+
+        var slashIndex = remoteBranch.IndexOf('/');
+        var remote = slashIndex > 0 ? remoteBranch[..slashIndex] : "origin";
+        var branch = slashIndex > 0 ? remoteBranch[(slashIndex + 1)..] : remoteBranch;
+
+        var originalSha = (await RunGitAsync(folderPath, "rev-parse", "HEAD")).Output.Trim();
+
+        var pullResult = await RunGitAsync(folderPath, "pull", "--no-edit", remote, branch);
+        if (pullResult.ExitCode == 0)
+            return new GitPullResult(true, pullResult.Output, false, false, null, null);
+
+        // pull 失敗，嘗試還原到 pull 前的狀態
+        string? restoreError = null;
+
+        var mergeHeadCheck = await RunGitAsync(folderPath, "rev-parse", "-q", "--verify", "MERGE_HEAD");
+        if (mergeHeadCheck.ExitCode == 0)
+        {
+            var abortResult = await RunGitAsync(folderPath, "merge", "--abort");
+            if (abortResult.ExitCode != 0)
+                restoreError = $"merge --abort 失敗: {abortResult.Output}";
+        }
+
+        var restored = false;
+        if (restoreError == null)
+        {
+            var currentSha = (await RunGitAsync(folderPath, "rev-parse", "HEAD")).Output.Trim();
+            if (currentSha == originalSha)
+            {
+                restored = true;
+            }
+            else
+            {
+                var resetResult = await RunGitAsync(folderPath, "reset", "--keep", originalSha);
+                if (resetResult.ExitCode == 0)
+                    restored = true;
+                else
+                    restoreError = $"reset --keep 失敗: {resetResult.Output}";
+            }
+        }
+
+        return new GitPullResult(false, pullResult.Output, false, restored, restoreError, restored ? originalSha : null);
+    }
+
     private static async Task<(int ExitCode, string Output)> RunGitAsync(string workingDirectory, params string[] arguments)
     {
         var psi = new ProcessStartInfo
@@ -93,8 +140,12 @@ public class GitService : IGitService
         await process.WaitForExitAsync();
 
         var output = await stdoutTask;
+        var error = await stderrTask;
         if (string.IsNullOrEmpty(output))
-            output = await stderrTask;
+            output = error;
+        // 失敗時 stdout 常只有進度文字，真正原因在 stderr，一併附上
+        else if (process.ExitCode != 0 && !string.IsNullOrWhiteSpace(error))
+            output = $"{output.TrimEnd()}\n{error}";
 
         return (process.ExitCode, output);
     }

@@ -16,15 +16,22 @@ public partial class BranchSelectorWindow : Window, INotifyPropertyChanged
     public string? SelectedBranch { get; private set; }
     public bool HasSelection => BranchListBox?.SelectedItem != null;
 
+    // Pull 模式：只列遠端分支，確認鈕文字與視窗標題需與切換分支區分
+    public bool IsPullMode { get; }
+    public string ConfirmButtonText { get; }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public BranchSelectorWindow(
         string projectName,
         string currentBranch,
         List<string> localBranches,
-        List<string> remoteBranches)
+        List<string> remoteBranches,
+        bool isPullMode = false)
     {
         ProjectName = projectName;
+        IsPullMode = isPullMode;
+        ConfirmButtonText = isPullMode ? "Pull" : "切換分支";
         DataContext = this;
 
         _allBranches = [];
@@ -41,9 +48,7 @@ public partial class BranchSelectorWindow : Window, INotifyPropertyChanged
 
         foreach (var branch in remoteBranches)
         {
-            var localName = branch.Contains('/')
-                ? branch[(branch.IndexOf('/') + 1)..]
-                : branch;
+            var localName = GetLocalName(branch);
 
             if (localBranches.Contains(localName)) continue;
 
@@ -56,14 +61,22 @@ public partial class BranchSelectorWindow : Window, INotifyPropertyChanged
         }
 
         InitializeComponent();
+        Title = isPullMode ? "Pull 分支" : "切換 Git 分支";
         BranchListBox.ItemsSource = _allBranches;
         BranchListBox.SelectionChanged += (_, _) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasSelection)));
 
-        var currentItem = _allBranches.FirstOrDefault(b => b.IsCurrent);
-        if (currentItem != null)
-            BranchListBox.SelectedItem = currentItem;
+        // Pull 模式預設選中目前分支對應的遠端追蹤分支（如 origin/<目前分支>），切換模式維持選中目前分支
+        var defaultItem = isPullMode
+            ? _allBranches.FirstOrDefault(b => b.Name == $"origin/{currentBranch}")
+              ?? _allBranches.FirstOrDefault(b => GetLocalName(b.Name) == currentBranch)
+            : _allBranches.FirstOrDefault(b => b.IsCurrent);
+        if (defaultItem != null)
+            BranchListBox.SelectedItem = defaultItem;
     }
+
+    private static string GetLocalName(string branchName) =>
+        branchName.Contains('/') ? branchName[(branchName.IndexOf('/') + 1)..] : branchName;
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {

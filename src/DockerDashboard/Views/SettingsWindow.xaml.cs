@@ -13,15 +13,11 @@ namespace DockerDashboard.Views;
 public partial class SettingsWindow : Window
 {
     private readonly AppSettings _settings;
-    private readonly UpdateService _updateService;
-    private readonly Action<UpdateInfo>? _onUpdateFound;
 
-    public SettingsWindow(AppSettings settings, UpdateService updateService, Action<UpdateInfo>? onUpdateFound = null)
+    public SettingsWindow(AppSettings settings, UpdateService updateService)
     {
         InitializeComponent();
         _settings = settings;
-        _updateService = updateService;
-        _onUpdateFound = onUpdateFound;
 
         PollSlider.Value = settings.PollIntervalSeconds;
         ComposeV2Toggle.IsChecked = settings.UseComposeV2;
@@ -179,43 +175,6 @@ public partial class SettingsWindow : Window
         catch
         {
             return (false, "無法執行 docker 命令");
-        }
-    }
-
-    private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
-    {
-        CheckUpdateBtn.IsEnabled = false;
-        UpdateResultText.Text = "⏳ 檢查中...";
-        UpdateResultText.Foreground = WpfBrushes.Gray;
-        try
-        {
-            var info = await _updateService.CheckForUpdatesAsync();
-            if (info is not null)
-            {
-                var ver = info.TargetFullRelease.Version.ToString();
-                UpdateResultText.Text = $"✅ 發現新版本 v{ver}，關閉設定後點擊工具列按鈕安裝";
-                UpdateResultText.Foreground = WpfBrushes.Green;
-                _onUpdateFound?.Invoke(info);
-            }
-            else if (_updateService.IsInstalled)
-            {
-                UpdateResultText.Text = $"✅ 已是最新版本 (v{_updateService.CurrentVersion})";
-                UpdateResultText.Foreground = WpfBrushes.Green;
-            }
-            else
-            {
-                UpdateResultText.Text = "⚠ 開發模式，略過更新檢查";
-                UpdateResultText.Foreground = WpfBrushes.Orange;
-            }
-        }
-        catch
-        {
-            UpdateResultText.Text = "❌ 無法連線至更新伺服器";
-            UpdateResultText.Foreground = WpfBrushes.OrangeRed;
-        }
-        finally
-        {
-            CheckUpdateBtn.IsEnabled = true;
         }
     }
 

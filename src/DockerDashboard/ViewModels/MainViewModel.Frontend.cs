@@ -261,14 +261,187 @@ public partial class MainViewModel
 
     private async Task RefreshBranchAsync(FrontendProject project)
     {
-        if (!_gitService.IsGitRepository(project.FolderPath)) return;
+        project.IsGitRepo = _gitService.IsGitRepository(project.FolderPath);
+        if (!project.IsGitRepo) return;
         try
         {
             project.CurrentBranch = await _gitService.GetCurrentBranchAsync(project.FolderPath);
+            project.IsDirty = await _gitService.IsDirtyAsync(project.FolderPath);
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[Frontend] 讀取 {project.Name} 分支失敗: {ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task SwitchFrontendBranchAsync(FrontendProject? project)
+    {
+        if (project == null || !project.IsGitRepo) return;
+        // npm install 等一次性指令或啟動途中也擋，避免 git 改檔與指令同時動工作區
+        if (project.IsGitBusy || project.IsOneShotRunning || project.IsStarting)
+        {
+            StatusMessage = "⚠ 已有操作進行中，請稍候";
+            return;
+        }
+
+        if (project.IsDevRunning)
+        {
+            var confirmRunning = System.Windows.MessageBox.Show(
+                $"專案 {project.Name} 的 dev server 執行中，切換分支可能造成不一致。\n\n確定要繼續嗎？",
+                "Dev Server 執行中警告",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+            if (confirmRunning != System.Windows.MessageBoxResult.Yes) return;
+        }
+
+        if (project.IsDirty)
+        {
+            var confirmDirty = System.Windows.MessageBox.Show(
+                $"專案 {project.Name} 有未提交的變更，切換分支可能導致衝突。\n\n確定要繼續嗎？",
+                "未提交變更警告",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+            if (confirmDirty != System.Windows.MessageBoxResult.Yes) return;
+        }
+
+        project.IsGitBusy = true;
+        try
+        {
+            var localBranches = await _gitService.GetLocalBranchesAsync(project.FolderPath);
+            var remoteBranches = await _gitService.GetRemoteBranchesAsync(project.FolderPath);
+
+            var selector = new Views.BranchSelectorWindow(
+                project.Name, project.CurrentBranch, localBranches, remoteBranches);
+            selector.Owner = Application.Current.MainWindow;
+
+            if (selector.ShowDialog() != true || string.IsNullOrEmpty(selector.SelectedBranch))
+                return;
+
+            var targetBranch = selector.SelectedBranch;
+            StatusMessage = $"正在切換 {project.Name} 到分支 {targetBranch}...";
+            AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] 🔀 切換 → {targetBranch}");
+
+            var (success, output) = await _gitService.CheckoutAsync(project.FolderPath, targetBranch);
+
+            if (success)
+            {
+                project.CurrentBranch = await _gitService.GetCurrentBranchAsync(project.FolderPath);
+                project.IsDirty = await _gitService.IsDirtyAsync(project.FolderPath);
+                StatusMessage = $"✅ {project.Name} 已切換到 {project.CurrentBranch}";
+                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ✅ 分支切換成功: {project.CurrentBranch}");
+            }
+            else
+            {
+                StatusMessage = $"⚠ {project.Name} 分支切換失敗";
+                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ❌ 分支切換失敗: {output}");
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"⚠ {project.Name} 分支切換失敗";
+            AppendFrontendLog(project, $"[例外] {ex.Message}");
+        }
+        finally
+        {
+            project.IsGitBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task RefreshFrontendGitStatusAsync(FrontendProject? project)
+    {
+        if (project == null) return;
+
+        project.IsGitRepo = _gitService.IsGitRepository(project.FolderPath);
+        if (!project.IsGitRepo) return;
+
+        project.CurrentBranch = await _gitService.GetCurrentBranchAsync(project.FolderPath);
+        project.IsDirty = await _gitService.IsDirtyAsync(project.FolderPath);
+    }
+
+    [RelayCommand]
+    private async Task PullFrontendAsync(FrontendProject? project)
+    {
+        if (project == null || !project.IsGitRepo) return;
+        // npm install 等一次性指令或啟動途中也擋，避免 git 改檔與指令同時動工作區
+        if (project.IsGitBusy || project.IsOneShotRunning || project.IsStarting)
+        {
+            StatusMessage = "⚠ 已有操作進行中，請稍候";
+            return;
+        }
+
+        if (project.IsDevRunning)
+        {
+            var confirmRunning = System.Windows.MessageBox.Show(
+                $"專案 {project.Name} 的 dev server 執行中，Pull 可能造成不一致。\n\n確定要繼續嗎？",
+                "Dev Server 執行中警告",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+            if (confirmRunning != System.Windows.MessageBoxResult.Yes) return;
+        }
+
+        project.IsGitBusy = true;
+        try
+        {
+            var remoteBranches = await _gitService.GetRemoteBranchesAsync(project.FolderPath);
+
+            var selector = new Views.BranchSelectorWindow(
+                project.Name, project.CurrentBranch, [], remoteBranches, isPullMode: true);
+            selector.Owner = Application.Current.MainWindow;
+
+            if (selector.ShowDialog() != true || string.IsNullOrEmpty(selector.SelectedBranch))
+                return;
+
+            var remoteBranch = selector.SelectedBranch;
+            StatusMessage = $"正在 pull {project.Name}（{remoteBranch}）...";
+            AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ⬇ Pull ← {remoteBranch}");
+
+            var result = await _gitService.PullAsync(project.FolderPath, remoteBranch);
+
+            if (result.BlockedByDirty)
+            {
+                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ⚠ 有未提交變更，請先 commit 或 stash");
+                StatusMessage = $"⚠ {project.Name} 有未提交變更，請先 commit 或 stash";
+                System.Windows.MessageBox.Show(
+                    $"專案 {project.Name} 有未提交的變更，請先 commit 或 stash 後再 Pull。",
+                    "有未提交變更",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Warning);
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.Output))
+                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] {result.Output.Trim()}");
+
+            project.CurrentBranch = await _gitService.GetCurrentBranchAsync(project.FolderPath);
+            project.IsDirty = await _gitService.IsDirtyAsync(project.FolderPath);
+
+            if (result.Success)
+            {
+                StatusMessage = $"✅ {project.Name} pull 成功";
+                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ✔ Pull 成功");
+            }
+            else if (result.Restored)
+            {
+                var shortSha = result.PreviousSha is { Length: >= 7 } sha ? sha[..7] : result.PreviousSha;
+                StatusMessage = $"❌ {project.Name} pull 失敗，已還原至 {shortSha}";
+                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ✖ Pull 失敗，已還原至 {shortSha}");
+            }
+            else
+            {
+                StatusMessage = $"❌ {project.Name} pull 失敗，還原失敗: {result.RestoreError}";
+                AppendFrontendLog(project, $"[{DateTime.Now:HH:mm:ss}] ✖ Pull 失敗，還原失敗: {result.RestoreError}");
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"⚠ {project.Name} pull 失敗";
+            AppendFrontendLog(project, $"[例外] {ex.Message}");
+        }
+        finally
+        {
+            project.IsGitBusy = false;
         }
     }
 
@@ -302,11 +475,13 @@ public partial class MainViewModel
             Name = System.IO.Path.GetFileName(folder.TrimEnd('\\', '/')),
             FolderPath = folder,
         };
-        if (_gitService.IsGitRepository(folder))
+        project.IsGitRepo = _gitService.IsGitRepository(folder);
+        if (project.IsGitRepo)
         {
             try
             {
                 project.CurrentBranch = await _gitService.GetCurrentBranchAsync(folder);
+                project.IsDirty = await _gitService.IsDirtyAsync(folder);
             }
             catch (Exception ex)
             {
@@ -434,12 +609,19 @@ public partial class MainViewModel
     {
         foreach (var project in InternalProjects.Concat(ExternalProjects).ToList())
         {
-            if (!_gitService.IsGitRepository(project.FolderPath)) continue;
+            var isGitRepo = _gitService.IsGitRepository(project.FolderPath);
+            await (Application.Current?.Dispatcher.InvokeAsync(() => project.IsGitRepo = isGitRepo).Task
+                   ?? Task.CompletedTask);
+            if (!isGitRepo) continue;
             try
             {
                 var branch = await _gitService.GetCurrentBranchAsync(project.FolderPath);
-                await (Application.Current?.Dispatcher.InvokeAsync(() => project.CurrentBranch = branch).Task
-                       ?? Task.CompletedTask);
+                var isDirty = await _gitService.IsDirtyAsync(project.FolderPath);
+                await (Application.Current?.Dispatcher.InvokeAsync(() =>
+                {
+                    project.CurrentBranch = branch;
+                    project.IsDirty = isDirty;
+                }).Task ?? Task.CompletedTask);
             }
             catch (Exception ex)
             {
