@@ -153,7 +153,7 @@
                         Command="{Binding AllUpCommand}"
                         IsEnabled="{Binding CanAllUp}"
                         Foreground="#4CAF50"
-                        ToolTip="Fast Dev 啟動（host build + 掛最新 dll、跑最新 code、改 .cs 約 5 秒生效，需 host .NET SDK）。左側選了 service 只起該 service、選了專案起該專案，沒選才起全部。">
+                        ToolTip="Fast Dev 啟動（host build + 掛最新 dll、跑最新 code、改 .cs 後約 20 到 45 秒生效，需 host .NET SDK）。左側選了 service 只起該 service、選了專案起該專案，沒選才起全部。">
                     <StackPanel Orientation="Horizontal">
                         <materialDesign:PackIcon Kind="Flash" VerticalAlignment="Center" />
                         <TextBlock Text="{Binding StartButtonText}" Margin="6,0,0,0" VerticalAlignment="Center" />
@@ -408,7 +408,7 @@
                                                       Command="{Binding Data.ToggleProjectFastDevCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
                                                       IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
-                                                      ToolTip="整個專案進 host-build dev 模式：改 C# 約 5 秒生效、不重建 image（需 host 端 .NET SDK）">
+                                                      ToolTip="整個專案進 host-build dev 模式：改 C# 後約 20 到 45 秒生效、不重建 image（需 host 端 .NET SDK）">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="FlashOutline" />
                                                 </MenuItem.Icon>
@@ -491,7 +491,7 @@
                                                       Command="{Binding Data.ApplyLatestCodeServiceCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
                                                       IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
-                                                      ToolTip="改了 C# 用這個：host build + 重啟該服務，約 5 秒；服務沒在 Fast Dev 會自動進入（需 .NET SDK）">
+                                                      ToolTip="改了 C# 用這個：host build + 重啟該服務，約 20 到 45 秒；服務沒在 Fast Dev 會自動進入（需 .NET SDK）">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon>
                                                         <materialDesign:PackIcon.Style>
@@ -606,7 +606,7 @@
                             <Button Style="{StaticResource MaterialDesignIconButton}"
                                     Command="{Binding ApplyLatestCodeServiceCommand}"
                                     CommandParameter="{Binding SelectedService}"
-                                    ToolTip="套用最新 code（改了 C#）：host build + 重啟該服務，約 5 秒；沒在 Fast Dev 會自動進入">
+                                    ToolTip="套用最新 code（改了 C#）：host build + 重啟該服務，約 20 到 45 秒；沒在 Fast Dev 會自動進入">
                                 <materialDesign:PackIcon>
                                     <materialDesign:PackIcon.Style>
                                         <Style TargetType="materialDesign:PackIcon">

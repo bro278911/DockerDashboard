@@ -773,7 +773,7 @@ public partial class MainViewModel
                     AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {names} 啟動完成");
                     var restartNote = await RestartDependentsOfRebuiltAsync(workingDirectory, scope, idsBefore, ct);
                     if (exitFastDev) return "✅ 已離開 Fast Dev" + restartNote;
-                    return (resolved.Count > 0 ? "✅ 已啟動（Fast Dev，改 .cs 約 5 秒生效）" : $"✅ {names} 已啟動") + restartNote;
+                    return (resolved.Count > 0 ? "✅ 已啟動（Fast Dev，改 .cs 後約 20 到 45 秒生效）" : $"✅ {names} 已啟動") + restartNote;
                 }
                 finally
                 {
