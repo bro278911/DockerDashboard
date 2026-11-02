@@ -9,6 +9,7 @@ namespace DockerDashboard.Tests;
 public class MainViewModelStartupTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "startup-" + Guid.NewGuid().ToString("N"));
+    private readonly FastDevReloadService _reload = new();
     private readonly string _dir;
     private readonly FakeCli _cli = new();
     private readonly FakeHostBuild _build = new();
@@ -32,7 +33,7 @@ public class MainViewModelStartupTests : IDisposable
         _settings = new SettingsService(Path.Combine(_root, "settings.json"));
         _vm = new MainViewModel(
             _cli, new FakeGit(), new ComposeFileScanner(new ScanCacheService(Path.Combine(_root, "cache.json"))),
-            _settings, new ContainerMonitorService(_cli), _build, new FastDevReloadService(),
+            _settings, new ContainerMonitorService(_cli), _build, _reload,
             // UpdateService 建構子需要 Velopack 安裝環境，測試用不到更新功能，跳過建構子
             (UpdateService)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(UpdateService)),
             new FrontendProcessManager(new NodeProcessService()))
@@ -964,6 +965,7 @@ public class MainViewModelStartupTests : IDisposable
         var saved = await _settings.LoadAsync();
         Assert.Contains(_api.WatchKey, saved.FastDevEnabledServiceKeys);
         Assert.Contains(saved.FastDevConfigs, c => c.ServiceKey == _api.WatchKey);
+        Assert.True(_reload.IsWatching(_dir));
     }
 
     [Fact]

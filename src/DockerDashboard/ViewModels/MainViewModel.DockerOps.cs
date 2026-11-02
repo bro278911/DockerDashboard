@@ -804,8 +804,10 @@ public partial class MainViewModel
 
         await SaveFastDevStateAsync(settings, changes);
         AppendLog($"[{DateTime.Now:HH:mm:ss}] ↩ Fast Dev 未套用成功，狀態已回復");
-        // 同目錄仍有既有 Fast Dev：override/watcher 是共用資源，重寫回先前組態，不重 up
-        SyncFastDevOverride(workingDirectory, settings);
+        // 同目錄仍有既有 Fast Dev：override/watcher 是共用資源，重寫回先前組態，不重 up；
+        // 離開 Fast Dev 時 watcher 可能已被卸除，要一併裝回
+        if (SyncFastDevOverride(workingDirectory, settings) != null)
+            _fastDevReload.Watch(workingDirectory);
     }
 
     // 只合併 Fast Dev 欄位：操作可能跑數分鐘，整份存回開頭的快照會蓋掉期間其他命令寫入的設定
