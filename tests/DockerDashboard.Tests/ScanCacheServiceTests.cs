@@ -114,6 +114,50 @@ public sealed class ScanCacheServiceTests : IDisposable
     }
 
     [Fact]
+    public void TryGet_舊快取缺DependsOn時_視為未命中()
+    {
+        var cachePath = Path.Combine(_tempDir, "cache.json");
+        var stamps = WriteComposeAndStamp();
+        var compose = MakeComposeFile(_tempDir);
+        compose.ProjectName = "demo";
+        var cache = new ScanCacheService(cachePath);
+        cache.Store(_tempDir, stamps, compose);
+        Assert.NotNull(cache.TryGet(_tempDir, stamps));
+
+        // 舊版快取檔沒有 DependsOn 欄位，反序列化後為 null
+        var entry = new CachedDirectoryDto(
+            stamps, "docker-compose.yml", compose.FilePath,
+            [new CachedServiceDto("web", "nginx", "my-web", "8080:80", "")], "demo");
+        var old = new ScanCacheService(Path.Combine(_tempDir, "old.json"));
+        File.WriteAllText(Path.Combine(_tempDir, "old.json"),
+            System.Text.Json.JsonSerializer.Serialize(
+                new Dictionary<string, CachedDirectoryDto> { [_tempDir] = entry }));
+        old.LoadAsync().GetAwaiter().GetResult();
+
+        Assert.Null(old.TryGet(_tempDir, stamps));
+    }
+
+    [Fact]
+    public async Task SaveAndLoad_DependsOn完整保留()
+    {
+        var cachePath = Path.Combine(_tempDir, "cache.json");
+        var stamps = WriteComposeAndStamp();
+        var compose = MakeComposeFile(_tempDir);
+        compose.ProjectName = "demo";
+        compose.Services[0].DependsOn = ["api", "db"];
+
+        var writer = new ScanCacheService(cachePath);
+        writer.Store(_tempDir, stamps, compose);
+        await writer.SaveAsync();
+
+        var reader = new ScanCacheService(cachePath);
+        await reader.LoadAsync();
+        var restored = reader.TryGet(_tempDir, stamps);
+
+        Assert.Equal(["api", "db"], Assert.Single(Assert.IsType<ComposeFile>(restored).Services).DependsOn);
+    }
+
+    [Fact]
     public async Task SaveAndLoad_RoundTrips()
     {
         var cachePath = Path.Combine(_tempDir, "cache.json");

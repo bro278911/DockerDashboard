@@ -223,14 +223,6 @@ public class DockerCliService : IDockerCliService
         return containers;
     }
 
-    public ProcessStream StartLogStream(string containerNameOrId)
-    {
-        var psi = CreatePsi("docker", ["logs", "-f", "--tail", "200", containerNameOrId], null);
-
-        var process = ProcessLauncher.Start(psi);
-        return new ProcessStream(process);
-    }
-
     public ProcessStream StartComposeLogStream(string workingDirectory, string serviceName)
     {
         var composeArgs = BuildComposeArgs(workingDirectory, ["logs", "-f", "--tail", "200", serviceName]);
@@ -270,25 +262,23 @@ public class DockerCliService : IDockerCliService
         return args;
     }
 
-    public async Task<(int ExitCode, string Output)> ComposeUpFastWithLogAsync(
-        string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default)
+    internal List<string> BuildComposeUpServicesArgs(
+        string workingDirectory, IReadOnlyList<string> serviceNames, string? extraOverrideFile)
     {
-        var args = BuildComposeArgs(workingDirectory, ["up", "-d", "--remove-orphans"]);
-        if (!string.IsNullOrEmpty(serviceName))
-            args.Add(serviceName);
-
-        return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
+        // --no-deps：只動指定服務，不連帶重建依賴（避免把其他 Fast Dev 服務換回原 image）
+        // --build：才會建自訂 nginx 這類非 .NET 服務；Fast Dev 服務的 override 為 build.target: base，仍很快
+        var args = BuildComposeArgs(
+            workingDirectory, ["up", "-d", "--build", "--no-deps"], NormalizeComposeOverridePath(extraOverrideFile));
+        args.AddRange(serviceNames);
+        return args;
     }
 
-    public async Task<(int ExitCode, string Output)> ComposeUpAllAsync(
-        string workingDirectory, Action<string> onOutput,
+    public async Task<(int ExitCode, string Output)> ComposeUpServicesAsync(
+        string workingDirectory, IReadOnlyList<string> serviceNames, Action<string> onOutput,
         CancellationToken ct, string? extraOverrideFile = null)
     {
-        // 整包 up --build：--build 才會建自訂 nginx（否則吃到本機公開 nginx image，路由設定沒進去 → 404）
-        // .NET 服務的 fastdev override 為 build.target: base，--build 只建 runtime 階段，仍很快
-        var args = BuildComposeArgs(
-            workingDirectory, ["up", "-d", "--build"], NormalizeComposeOverridePath(extraOverrideFile));
-        return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
+        var args = BuildComposeUpServicesArgs(workingDirectory, serviceNames, extraOverrideFile);
+        return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct, withBuildEnv: true);
     }
 
     public Task<(int ExitCode, string Output)> RestartContainerAsync(
@@ -300,30 +290,6 @@ public class DockerCliService : IDockerCliService
     {
         var args = BuildComposeArgs(workingDirectory, ["down", "--remove-orphans"]);
         return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
-    }
-
-    public async Task<(int ExitCode, string Output)> ComposeRestartWithLogAsync(
-        string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default)
-    {
-        var args = BuildComposeArgs(workingDirectory, ["restart"]);
-        if (!string.IsNullOrEmpty(serviceName))
-            args.Add(serviceName);
-
-        return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct);
-    }
-
-    public async Task<(int ExitCode, string Output)> ComposeRebuildRestartWithLogAsync(
-        string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default)
-    {
-        // --no-deps: 只重建目標 service，跳過 depends_on 依賴（依賴本來就在跑時省去額外 round-trip）
-        var subcommands = serviceName != null
-            ? (IEnumerable<string>)["up", "-d", "--build", "--no-deps"]
-            : ["up", "-d", "--build"];
-        var args = BuildComposeArgs(workingDirectory, subcommands);
-        if (!string.IsNullOrEmpty(serviceName))
-            args.Add(serviceName);
-
-        return await RunCommandWithLogAsync(ComposeCommand, args, workingDirectory, onOutput, ct, withBuildEnv: true);
     }
 
     public async Task<(int ExitCode, string Output)> ComposeStopWithLogAsync(

@@ -72,4 +72,59 @@ public class FastDevComposeGeneratorTests
 
         Assert.Contains(@"- 'D:\My Repo #1\OrderBackend:/app:rw'", block);
     }
+
+    private static string Block(string environment, AzureCredential? credential) =>
+        FastDevComposeGenerator.ServiceOverrideBlock(
+            "orderbackend", SampleConfig(), @"D:\CMPBackend\OrderBackend", @"C:\Users\me\.nuget\packages",
+            environment, credential);
+
+    private static List<string> ParsedEnvironment(string block)
+    {
+        var doc = new YamlDotNet.Serialization.Deserializer()
+            .Deserialize<Dictionary<string, Dictionary<string, Dictionary<string, object>>>>("services:\n" + block);
+        return ((List<object>)doc["services"]["orderbackend"]["environment"]).Select(o => (string)o).ToList();
+    }
+
+    [Fact]
+    public void ServiceOverrideBlock_Development輸出與舊版一致_即使傳入憑證也不寫AZURE()
+    {
+        var plain = FastDevComposeGenerator.ServiceOverrideBlock(
+            "orderbackend", SampleConfig(), @"D:\CMPBackend\OrderBackend", @"C:\Users\me\.nuget\packages");
+
+        Assert.Equal(plain, Block("Development", null));
+        Assert.Equal(plain, Block("Development", new AzureCredential("t", "c", "s")));
+        Assert.DoesNotContain("AZURE_", plain);
+    }
+
+    [Fact]
+    public void ServiceOverrideBlock_Stage寫入環境與AZURE變數()
+    {
+        var env = ParsedEnvironment(Block("Stage", new AzureCredential("tenant-1", "client-1", "fake-secret")));
+
+        Assert.Contains("ASPNETCORE_ENVIRONMENT=Stage", env);
+        Assert.Contains("AZURE_TENANT_ID=tenant-1", env);
+        Assert.Contains("AZURE_CLIENT_ID=client-1", env);
+        Assert.Contains("AZURE_CLIENT_SECRET=fake-secret", env);
+    }
+
+    [Fact]
+    public void ServiceOverrideBlock_Stage無憑證_只改環境()
+    {
+        var block = Block("Stage", null);
+
+        Assert.Contains("ASPNETCORE_ENVIRONMENT=Stage", block);
+        Assert.DoesNotContain("AZURE_", block);
+    }
+
+    [Fact]
+    public void ServiceOverrideBlock_憑證含錢號單引號冒號_YAML可解析且錢號跳脫成雙錢號()
+    {
+        var env = ParsedEnvironment(Block("Production", new AzureCredential("t:1", "c#1", "ab$c'd:e")));
+
+        Assert.Contains("ASPNETCORE_ENVIRONMENT=Production", env);
+        Assert.Contains("AZURE_TENANT_ID=t:1", env);
+        Assert.Contains("AZURE_CLIENT_ID=c#1", env);
+        // compose 會把 $$ 還原成字面 $
+        Assert.Contains("AZURE_CLIENT_SECRET=ab$$c'd:e", env);
+    }
 }

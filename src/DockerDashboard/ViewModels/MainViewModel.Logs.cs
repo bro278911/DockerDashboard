@@ -34,17 +34,10 @@ public partial class MainViewModel
         StopLogStream();
         BackendLog.Clear();
 
-        var containerName = !string.IsNullOrEmpty(service.ContainerId)
-            ? service.ContainerId
-            : !string.IsNullOrEmpty(service.ContainerName)
-                ? service.ContainerName
-                : null;
-
         _logCts = new CancellationTokenSource();
 
-        _logProcess = !string.IsNullOrEmpty(containerName)
-            ? _dockerCli.StartLogStream(containerName)
-            : _dockerCli.StartComposeLogStream(service.WorkingDirectory, service.Name);
+        // 一律走 compose logs -f：容器 restart 後它會持續串流，docker logs -f 則會直接結束
+        _logProcess = _dockerCli.StartComposeLogStream(service.WorkingDirectory, service.Name);
 
         var process = _logProcess!;
         var cts = _logCts!;

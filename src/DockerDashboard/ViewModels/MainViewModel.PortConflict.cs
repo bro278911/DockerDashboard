@@ -68,8 +68,13 @@ public partial class MainViewModel
         }
         if (conflicts.Count == 0) return true;
 
-        return await ConfirmAndStopPortConflictsAsync(conflicts);
+        return PortConflictResolver != null
+            ? await PortConflictResolver(conflicts)
+            : await ConfirmAndStopPortConflictsAsync(conflicts);
     }
+
+    // 測試用接縫：取代跳 MessageBox 的衝突確認流程
+    internal Func<List<(int Port, DockerService Wanted, DockerService Running)>, Task<bool>>? PortConflictResolver { get; set; }
 
     private async Task<bool> ConfirmAndStopPortConflictsAsync(List<(int Port, DockerService Wanted, DockerService Running)> conflicts)
     {

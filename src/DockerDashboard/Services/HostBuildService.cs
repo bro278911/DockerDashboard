@@ -25,7 +25,7 @@ public class HostBuildService
         return changed;
     }
 
-    public async Task<(int ExitCode, string Output)> BuildAsync(
+    public virtual async Task<(int ExitCode, string Output)> BuildAsync(
         string? solutionPath, IReadOnlyList<string> serviceProjectFullPaths,
         Action<string> onOutput, CancellationToken ct)
     {

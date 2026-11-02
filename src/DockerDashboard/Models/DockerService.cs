@@ -37,5 +37,8 @@ public partial class DockerService : ObservableObject
     // compose build.dockerfile 解析出的絕對路徑；Fast Dev 據此確定對應哪個專案（對齊 VS，不靠資料夾名猜）
     public string DockerfilePath { get; set; } = string.Empty;
 
+    // compose depends_on 的服務名稱（同一個 compose 專案內）；單服務啟動時據此帶起未執行的依賴
+    public List<string> DependsOn { get; set; } = [];
+
     public string WatchKey => $"{ComposeFilePath}::{Name}";
 }

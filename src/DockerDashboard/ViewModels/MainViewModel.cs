@@ -27,13 +27,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly UpdateService _updateService;
     private readonly FrontendProcessManager _frontendProcesses;
     private Forms.NotifyIcon? _notifyIcon;
-    private int _batchStartupParallelism = 3;
     // 兩份清單各自的「內容是否可信」旗標，供 SaveSettingsAsync 判斷可否覆寫對應設定欄位。
     // 載入中或重新掃描中集合會是空的或不完整，此時存檔會把設定寫成空清單
     internal bool _dockerProjectsLoaded;
     internal bool _frontendProjectsLoaded;
-    private bool _dotnetSdkChecked;
-    private bool _dotnetSdkAvailable;
+    internal bool _dotnetSdkChecked;
+    internal bool _dotnetSdkAvailable;
     private CancellationTokenSource? _operationCts;
 
     public ObservableCollection<DockerProject> Projects { get; } = [];
@@ -49,6 +48,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StartButtonText))]
+    [NotifyPropertyChangedFor(nameof(SelectedProjectIsProduction))]
     private DockerProject? _selectedProject;
 
     [ObservableProperty]
@@ -130,7 +130,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         _monitor.ContainersUpdated += OnContainersUpdated;
         _monitor.ContainerCrashed += OnContainerCrashed;
-        _fastDevReload.OnSolutionChanged = OnFastDevSolutionChangedAsync;
+        // watcher 從背景執行緒回呼，handler 會讀 Projects 並改 UI 狀態，須切回 UI 執行緒
+        _fastDevReload.OnSolutionChanged = dir => RunOnUiThreadAsync(() => OnFastDevSolutionChangedAsync(dir));
         _frontendProcesses.OutputReceived += OnFrontendOutput;
         _frontendProcesses.StateChanged += OnFrontendStateChanged;
     }
@@ -220,6 +221,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var statusConfirmed = await _monitor.ForceRefreshAsync();
 
         ApplySettings(settings);
+        _ = RefreshAvailableEnvironmentsAsync();
         RestoreFastDevStateFromSettings(settings, statusConfirmed);
 
         StatusMessage = IsDockerAvailable ? "就緒" : "⚠ Docker 未連線（顯示快取清單，連線恢復後自動更新）";
@@ -256,10 +258,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     internal void ApplySettings(AppSettings settings)
     {
-        _batchStartupParallelism = Math.Clamp(settings.StartupParallelism, 1, 8);
         _fastDevReload.IsEnabled = settings.FastDevAutoReloadEnabled;
         FastDevAutoReloadEnabled = settings.FastDevAutoReloadEnabled;
         ShowClassicControls = settings.ClassicControlsEnabled;
+        ApplyProjectEnvironments(settings);
     }
 
     internal void RestoreFastDevStateFromSettings(AppSettings settings, bool statusConfirmed)
@@ -338,6 +340,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return "此資料夾及其子目錄找不到可用的 docker compose 檔（沒有 compose 檔，或 compose 解析失敗，詳見操作紀錄）";
 
         Projects.Add(project);
+        _ = RefreshAvailableEnvironmentsAsync([project]);
         return null;
     }
 
@@ -412,24 +415,31 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StoppedCount = TotalCount - RunningCount;
     }
 
+    private (ContainerMatcher Matcher, HashSet<string> AmbiguousNames) CreateMatcher(
+        IEnumerable<ContainerInfo> containers)
+    {
+        var importedDirs = Projects
+            .SelectMany(p => p.ComposeFiles)
+            .Select(f => f.DirectoryPath)
+            .Where(d => !string.IsNullOrEmpty(d));
+        var matcher = new ContainerMatcher(containers, importedDirs);
+
+        // 同名 service 出現在多個資料夾（同專案不同分支）時，禁用不分資料夾的寬鬆比對
+        var ambiguousNames = Projects
+            .SelectMany(p => p.ComposeFiles)
+            .SelectMany(f => f.Services)
+            .GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Select(s => s.WorkingDirectory).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return (matcher, ambiguousNames);
+    }
+
     private void OnContainersUpdated(List<ContainerInfo> containers)
     {
         Application.Current?.Dispatcher.InvokeAsync(() =>
         {
-            var importedDirs = Projects
-                .SelectMany(p => p.ComposeFiles)
-                .Select(f => f.DirectoryPath)
-                .Where(d => !string.IsNullOrEmpty(d));
-            var matcher = new ContainerMatcher(containers, importedDirs);
-
-            // 同名 service 出現在多個資料夾（同專案不同分支）時，禁用不分資料夾的寬鬆比對
-            var ambiguousNames = Projects
-                .SelectMany(p => p.ComposeFiles)
-                .SelectMany(f => f.Services)
-                .GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
-                .Where(g => g.Select(s => s.WorkingDirectory).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
-                .Select(g => g.Key)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var (matcher, ambiguousNames) = CreateMatcher(containers);
 
             foreach (var project in Projects)
             {
@@ -501,7 +511,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    internal void AppendLog(string message) => BackendLog.Append(message);
+    // 測試用觀察點：驗證日誌內容（單元測試環境下 BackendLog 會丟棄訊息）
+    internal Action<string>? LogObserver { get; set; }
+
+    internal void AppendLog(string message)
+    {
+        LogObserver?.Invoke(message);
+        BackendLog.Append(message);
+    }
 
     public List<string> ParsePortLinks(string? ports)
     {

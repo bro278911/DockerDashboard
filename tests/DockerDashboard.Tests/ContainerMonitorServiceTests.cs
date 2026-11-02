@@ -45,15 +45,11 @@ public class ContainerMonitorServiceTests
         public Task<List<ContainerInfo>?> GetRunningContainersAsync(CancellationToken ct = default) =>
             Task.FromResult(Containers);
 
-        public ProcessStream StartLogStream(string containerNameOrId) => throw new NotSupportedException();
         public ProcessStream StartComposeLogStream(string workingDirectory, string serviceName) => throw new NotSupportedException();
         public ProcessStream StartComposeWatch(string workingDirectory, IEnumerable<string> serviceNames) => throw new NotSupportedException();
-        public Task<(int ExitCode, string Output)> ComposeUpFastWithLogAsync(string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<(int ExitCode, string Output)> ComposeUpAllAsync(string workingDirectory, Action<string> onOutput, CancellationToken ct, string? extraOverrideFile = null) => throw new NotSupportedException();
+        public Task<(int ExitCode, string Output)> ComposeUpServicesAsync(string workingDirectory, IReadOnlyList<string> serviceNames, Action<string> onOutput, CancellationToken ct, string? extraOverrideFile = null) => throw new NotSupportedException();
         public Task<(int ExitCode, string Output)> RestartContainerAsync(string containerNameOrId, Action<string> onOutput, CancellationToken ct) => throw new NotSupportedException();
         public Task<(int ExitCode, string Output)> ComposeDownWithLogAsync(string workingDirectory, Action<string> onOutput, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<(int ExitCode, string Output)> ComposeRestartWithLogAsync(string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<(int ExitCode, string Output)> ComposeRebuildRestartWithLogAsync(string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<(int ExitCode, string Output)> ComposeStopWithLogAsync(string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<string> GetContainerLogsAsync(string containerNameOrId, int tail = 30, CancellationToken ct = default) => throw new NotSupportedException();
         public ProcessStream StartDockerEvents() => throw new NotSupportedException();
