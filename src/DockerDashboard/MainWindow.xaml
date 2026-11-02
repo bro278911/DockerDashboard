@@ -339,6 +339,13 @@
                                              ToolTip="有未提交的變更"
                                              Visibility="{Binding IsDirty, Converter={StaticResource BoolToVisibilityConverter}}" />
                                     <!-- 環境徽章：Development 不顯示 -->
+                                    <Border Background="#D32F2F" CornerRadius="8" Padding="6,2" Margin="6,0,0,0"
+                                            VerticalAlignment="Center"
+                                            ToolTip="已切換環境，但在跑的容器還是舊環境，重新啟動後才生效"
+                                            Visibility="{Binding EnvironmentPendingRestart, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="待重啟" FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="White" VerticalAlignment="Center" />
+                                    </Border>
                                     <Border Background="#FB8C00" CornerRadius="8" Padding="6,2" Margin="6,0,0,0"
                                             VerticalAlignment="Center"
                                             Visibility="{Binding IsStageEnvironment, Converter={StaticResource BoolToVisibilityConverter}}">

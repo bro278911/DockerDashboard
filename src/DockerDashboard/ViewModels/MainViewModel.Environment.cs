@@ -49,6 +49,8 @@ public partial class MainViewModel
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {project.Name} 設定為 Production 但「允許 Production 環境」未開啟，改用 Development");
                 stored = ProjectEnvironment.Development;
             }
+            if (project.SelectedEnvironment != stored && RunningFastDev(project).Count > 0)
+                project.EnvironmentPendingRestart = true;
             project.SelectedEnvironment = stored;
         }
         OnPropertyChanged(nameof(SelectedProjectIsProduction));
@@ -93,6 +95,11 @@ public partial class MainViewModel
         var project = choice.Project;
         var target = choice.Name;
         if (project.SelectedEnvironment == target) return;
+        if (IsBusy)
+        {
+            StatusMessage = "⚠ 已有操作進行中，請稍候";
+            return;
+        }
 
         if (target == ProjectEnvironment.Production && !ConfirmProductionEnvironment(project))
         {
@@ -106,7 +113,8 @@ public partial class MainViewModel
         AppendLog($"[{DateTime.Now:HH:mm:ss}] 🌐 {project.Name} 環境切換為 {target}");
 
         // 只有 Fast Dev 的 .NET 服務吃這個環境；一般 image 的服務重啟也不會變
-        var running = ProjectServices(project).Where(s => s.IsFastDev && s.IsRunning).ToList();
+        var running = RunningFastDev(project);
+        project.EnvironmentPendingRestart = running.Count > 0;
         if (running.Count == 0)
         {
             StatusMessage = $"{project.Name} 環境已設為 {target}，下次啟動生效";
@@ -122,6 +130,17 @@ public partial class MainViewModel
         // 使用者剛在上面確認過環境，啟動時不再重問
         foreach (var group in running.GroupBy(s => s.WorkingDirectory, StringComparer.OrdinalIgnoreCase))
             await StartServicesAsync(group.Key, group.ToList(), environmentConfirmed: true);
+    }
+
+    private static List<DockerService> RunningFastDev(DockerProject project) =>
+        ProjectServices(project).Where(s => s.IsFastDev && s.IsRunning).ToList();
+
+    // 專案內在跑的 Fast Dev 服務都已用新環境重建，才清除待重啟標示
+    private void ClearEnvironmentPendingIfApplied(IReadOnlyList<DockerService> scope)
+    {
+        foreach (var project in scope.Select(ProjectOf).OfType<DockerProject>().Distinct())
+            if (RunningFastDev(project).All(scope.Contains))
+                project.EnvironmentPendingRestart = false;
     }
 
     // 以 Production 啟動前的二次確認；任一專案被拒絕即中止

@@ -908,6 +908,72 @@ public class MainViewModelStartupTests : IDisposable
 
         Assert.Empty(_cli.UpCalls);
         Assert.Contains("重新啟動後生效", _vm.StatusMessage);
+        Assert.True(Proj.EnvironmentPendingRestart);
+    }
+
+    [Fact]
+    public async Task 切換環境_重啟失敗_標示待重啟_之後重啟成功才清除()
+    {
+        await MakeFastDevAsync(_api, "api-cid");
+        _vm.ConfirmRestartForEnvironment = _ => true;
+        _cli.UpExitCode = 1;
+
+        await _vm.SelectProjectEnvironmentCommand.ExecuteAsync(new EnvironmentChoice(Proj, "Stage", false));
+        Assert.True(Proj.EnvironmentPendingRestart);
+
+        _cli.UpExitCode = 0;
+        await _vm.StartServicesAsync(_dir, [_api]);
+        Assert.False(Proj.EnvironmentPendingRestart);
+    }
+
+    [Fact]
+    public async Task 有操作進行中_不可切換環境()
+    {
+        _vm.IsOperating = true;
+
+        await _vm.SelectProjectEnvironmentCommand.ExecuteAsync(new EnvironmentChoice(Proj, "Stage", false));
+
+        Assert.Equal("Development", Proj.SelectedEnvironment);
+        Assert.Empty((await _settings.LoadAsync()).ProjectEnvironments);
+    }
+
+    [Fact]
+    public async Task 啟動失敗回滾_不覆寫期間寫入的其他設定()
+    {
+        _build.OnBuild = () => _settings.UpdateAsync(s => s.ProjectEnvironments["other"] = "Stage").GetAwaiter().GetResult();
+        _cli.UpExitCode = 1;
+
+        await _vm.StartServicesAsync(_dir, [_api]);
+
+        Assert.False(_api.IsFastDev);
+        var saved = await _settings.LoadAsync();
+        Assert.Equal("Stage", saved.ProjectEnvironments["other"]);
+        Assert.DoesNotContain(_api.WatchKey, saved.FastDevEnabledServiceKeys);
+    }
+
+    [Fact]
+    public async Task 離開FastDev失敗_還原旗標與設定()
+    {
+        await MakeFastDevAsync(_api, "api-cid");
+        _cli.UpExitCode = 1;
+
+        var ok = await _vm.StartServicesAsync(_dir, [_api], exitFastDev: true);
+
+        Assert.False(ok);
+        Assert.True(_api.IsFastDev);
+        var saved = await _settings.LoadAsync();
+        Assert.Contains(_api.WatchKey, saved.FastDevEnabledServiceKeys);
+        Assert.Contains(saved.FastDevConfigs, c => c.ServiceKey == _api.WatchKey);
+    }
+
+    [Fact]
+    public async Task 移除專案_清除環境設定()
+    {
+        await _vm.SelectProjectEnvironmentCommand.ExecuteAsync(new EnvironmentChoice(Proj, "Stage", false));
+
+        await _vm.RemoveProjectCommand.ExecuteAsync(Proj);
+
+        Assert.Empty((await _settings.LoadAsync()).ProjectEnvironments);
     }
 
     [Fact]
@@ -956,12 +1022,14 @@ public class MainViewModelStartupTests : IDisposable
     {
         public List<List<string>> Calls { get; } = [];
         public int ExitCode { get; set; }
+        public Action? OnBuild { get; set; }
 
         public override Task<(int ExitCode, string Output)> BuildAsync(
             string? solutionPath, IReadOnlyList<string> serviceProjectFullPaths,
             Action<string> onOutput, CancellationToken ct)
         {
             Calls.Add([.. serviceProjectFullPaths]);
+            OnBuild?.Invoke();
             return Task.FromResult((ExitCode, string.Empty));
         }
     }

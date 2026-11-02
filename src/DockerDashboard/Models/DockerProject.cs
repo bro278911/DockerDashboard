@@ -32,6 +32,10 @@ public partial class DockerProject : ObservableObject
     [NotifyPropertyChangedFor(nameof(EnvironmentChoices))]
     private IReadOnlyList<string> _availableEnvironments = [ProjectEnvironment.Development];
 
+    // 環境已選定但在跑的容器還是舊環境（使用者拒絕重啟或重啟失敗），UI 須標示，避免誤判實際連線目標
+    [ObservableProperty]
+    private bool _environmentPendingRestart;
+
     public bool IsStageEnvironment => SelectedEnvironment == ProjectEnvironment.Stage;
     public bool IsProductionEnvironment => SelectedEnvironment == ProjectEnvironment.Production;
 

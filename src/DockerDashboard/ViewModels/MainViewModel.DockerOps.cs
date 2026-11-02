@@ -433,6 +433,9 @@ public partial class MainViewModel
             }
         }
 
+        // 環境設定跟著移除，否則再匯入顯示 Development、重開 App 卻變回舊環境
+        await _settingsService.UpdateAsync(s =>
+            ProjectEnvironment.Set(s.ProjectEnvironments, project.FolderPath, ProjectEnvironment.Development));
         await SaveSettingsAsync();
         UpdateCounts();
         StatusMessage = $"已移除 {project.Name}";
@@ -695,6 +698,7 @@ public partial class MainViewModel
                 var idsBefore = scope.Distinct().ToDictionary(s => s, s => s.ContainerId);
                 var settings = await _settingsService.LoadAsync();
                 var enabled = new List<DockerService>();
+                var exited = new List<(DockerService Service, FastDevConfig? Config)>();
                 try
                 {
                     var resolved = new List<(DockerService Service, FastDevConfig Config)>();
@@ -702,10 +706,11 @@ public partial class MainViewModel
                     {
                         foreach (var service in scope.Where(s => s.IsFastDev))
                         {
+                            exited.Add((service, settings.FastDevConfigs.FirstOrDefault(c => c.ServiceKey == service.WatchKey)));
                             service.IsFastDev = false;
                             PersistFastDev(settings, service.WatchKey, null, enabled: false);
                         }
-                        await _settingsService.SaveAsync(settings);
+                        await SaveFastDevStateAsync(settings, exited.Select(e => (e.Service.WatchKey, (FastDevConfig?)null, false)));
                     }
                     else
                     {
@@ -726,7 +731,8 @@ public partial class MainViewModel
                             service.IsFastDev = true;
                             PersistFastDev(settings, service.WatchKey, config, enabled: true);
                         }
-                        if (resolved.Count > 0) await _settingsService.SaveAsync(settings);
+                        if (resolved.Count > 0)
+                            await SaveFastDevStateAsync(settings, resolved.Select(r => (r.Service.WatchKey, (FastDevConfig?)r.Config, true)));
                     }
 
                     // 只 build scope 內的 .NET 服務專案（MSBuild 增量，scope 外的專案不動）
@@ -762,6 +768,7 @@ public partial class MainViewModel
                     }
 
                     success = true;
+                    ClearEnvironmentPendingIfApplied(scope);
                     if (overridePath != null) _fastDevReload.Watch(workingDirectory);
                     AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {names} 啟動完成");
                     var restartNote = await RestartDependentsOfRebuiltAsync(workingDirectory, scope, idsBefore, ct);
@@ -770,23 +777,49 @@ public partial class MainViewModel
                 }
                 finally
                 {
-                    // 失敗／取消：回滾本次新啟用的 Fast Dev 旗標，避免 UI 與持久化指向不存在的 Fast Dev 容器
-                    if (!success && enabled.Count > 0)
-                    {
-                        foreach (var service in enabled)
-                        {
-                            service.IsFastDev = false;
-                            PersistFastDev(settings, service.WatchKey, null, enabled: false);
-                        }
-                        await _settingsService.SaveAsync(settings);
-                        AppendLog($"[{DateTime.Now:HH:mm:ss}] ↩ Fast Dev 未套用成功，狀態已回復");
-                        // 同目錄仍有既有 Fast Dev：override/watcher 是共用資源，重寫回先前組態，不重 up
-                        SyncFastDevOverride(workingDirectory, settings);
-                    }
+                    if (!success && enabled.Count + exited.Count > 0)
+                        await RollbackFastDevAsync(workingDirectory, settings, enabled, exited);
                 }
             });
 
         return started && success;
+    }
+
+    // 失敗／取消：撤銷本次新啟用與本次離開的 Fast Dev，避免 UI 與持久化跟實際容器脫鉤
+    private async Task RollbackFastDevAsync(
+        string workingDirectory, AppSettings settings, IReadOnlyList<DockerService> enabled,
+        IReadOnlyList<(DockerService Service, FastDevConfig? Config)> exited)
+    {
+        var changes = new List<(string Key, FastDevConfig? Config, bool Enabled)>();
+        foreach (var service in enabled)
+        {
+            service.IsFastDev = false;
+            changes.Add((service.WatchKey, null, false));
+        }
+        foreach (var (service, config) in exited)
+        {
+            service.IsFastDev = true;
+            changes.Add((service.WatchKey, config, true));
+        }
+
+        await SaveFastDevStateAsync(settings, changes);
+        AppendLog($"[{DateTime.Now:HH:mm:ss}] ↩ Fast Dev 未套用成功，狀態已回復");
+        // 同目錄仍有既有 Fast Dev：override/watcher 是共用資源，重寫回先前組態，不重 up
+        SyncFastDevOverride(workingDirectory, settings);
+    }
+
+    // 只合併 Fast Dev 欄位：操作可能跑數分鐘，整份存回開頭的快照會蓋掉期間其他命令寫入的設定
+    private Task SaveFastDevStateAsync(
+        AppSettings settings, IEnumerable<(string Key, FastDevConfig? Config, bool Enabled)> changes)
+    {
+        var list = changes.ToList();
+        foreach (var (key, config, enabled) in list)
+            PersistFastDev(settings, key, config, enabled);
+        return _settingsService.UpdateAsync(latest =>
+        {
+            foreach (var (key, config, enabled) in list)
+                PersistFastDev(latest, key, config, enabled);
+        });
     }
 
     private List<DockerService> ServicesInDirectory(string workingDirectory) =>
