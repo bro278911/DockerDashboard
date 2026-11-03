@@ -717,6 +717,8 @@ public partial class MainViewModel
             async ct =>
             {
                 var idsBefore = scope.Distinct().ToDictionary(s => s, s => s.ContainerId);
+                var appliedEnvironments = new List<(DockerService Service, string Environment)>();
+                var upAttempted = false;
                 var settings = await _settingsService.LoadAsync();
                 var enabled = new List<DockerService>();
                 var exited = new List<(DockerService Service, FastDevConfig? Config)>();
@@ -775,9 +777,12 @@ public partial class MainViewModel
                         }
                     }
 
+                    // override 與成功後記錄的套用環境必須是同一份值：up 可能跑數分鐘，期間專案環境可能被改
+                    appliedEnvironments = resolved.Select(r => (r.Service, EnvironmentOf(r.Service))).ToList();
                     var overridePath = await SyncFastDevOverrideAsync(workingDirectory, settings, secrets);
 
                     StatusMessage = "正在啟動容器...";
+                    upAttempted = true;
                     var upNames = scope.Select(s => s.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                     var (upExit, _) = await _dockerCli.ComposeUpServicesAsync(
                         workingDirectory, upNames, line => AppendLog(RedactSecrets(line, secrets)), ct, overridePath);
@@ -792,7 +797,7 @@ public partial class MainViewModel
                     // 記錄這批服務容器實際套用的環境：離開 Fast Dev 的回到一般 image（等同 Development，移除記錄）
                     await SaveAppliedEnvironmentsAsync(exitFastDev
                         ? exited.Select(e => (e.Service, ProjectEnvironment.Development))
-                        : resolved.Select(r => (r.Service, EnvironmentOf(r.Service))));
+                        : appliedEnvironments);
                     foreach (var project in scope.Select(ProjectOf).OfType<DockerProject>().Distinct())
                         RefreshEnvironmentPending(project);
                     if (overridePath != null) _fastDevReload.Watch(workingDirectory);
@@ -805,6 +810,16 @@ public partial class MainViewModel
                 {
                     if (!success && enabled.Count + exited.Count > 0)
                         await RollbackFastDevAsync(workingDirectory, settings, enabled, resolved, exited);
+                    // up 已送出卻失敗／取消：compose 可能已用新環境換掉部分容器，無法確定實際套用的環境，
+                    // 標為 Unknown，讓待重啟持續顯示、下次切換環境一定重啟這些服務
+                    if (!success && upAttempted && !exitFastDev)
+                    {
+                        await SaveAppliedEnvironmentsAsync(appliedEnvironments
+                            .Where(a => a.Service.IsFastDev)
+                            .Select(a => (a.Service, ProjectEnvironment.Unknown)));
+                        foreach (var project in scope.Select(ProjectOf).OfType<DockerProject>().Distinct())
+                            RefreshEnvironmentPending(project);
+                    }
                 }
             });
 

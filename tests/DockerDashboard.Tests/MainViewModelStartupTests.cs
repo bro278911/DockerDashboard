@@ -943,6 +943,40 @@ public class MainViewModelStartupTests : IDisposable
     }
 
     [Fact]
+    public async Task 切換環境重啟失敗後切回原環境_仍會重啟_因套用環境無法確定()
+    {
+        await MakeFastDevAsync(_api, "api-cid");
+        _vm.ConfirmRestartForEnvironment = _ => true;
+        _cli.UpExitCode = 1;
+
+        await _vm.SelectProjectEnvironmentCommand.ExecuteAsync(new EnvironmentChoice(Proj, "Stage", false));
+
+        Assert.Equal(ProjectEnvironment.Unknown, _api.AppliedEnvironment);
+        Assert.Equal(ProjectEnvironment.Unknown, (await _settings.LoadAsync()).AppliedEnvironments[_api.WatchKey]);
+
+        _cli.UpExitCode = 0;
+        var upsBefore = _cli.UpCalls.Count;
+        await _vm.SelectProjectEnvironmentCommand.ExecuteAsync(new EnvironmentChoice(Proj, "Development", false));
+
+        Assert.Equal(upsBefore + 1, _cli.UpCalls.Count);
+        Assert.Equal(ProjectEnvironment.Development, _api.AppliedEnvironment);
+        Assert.False(Proj.EnvironmentPendingRestart);
+    }
+
+    [Fact]
+    public async Task host_build失敗未送出up_不標記套用環境為未知()
+    {
+        await MakeFastDevAsync(_api, "api-cid");
+        _vm.ConfirmRestartForEnvironment = _ => true;
+        _build.ExitCode = 1;
+
+        await _vm.SelectProjectEnvironmentCommand.ExecuteAsync(new EnvironmentChoice(Proj, "Stage", false));
+
+        Assert.Equal(ProjectEnvironment.Development, _api.AppliedEnvironment);
+        Assert.True(Proj.EnvironmentPendingRestart);
+    }
+
+    [Fact]
     public async Task 有操作進行中_不可切換環境()
     {
         _vm.IsOperating = true;

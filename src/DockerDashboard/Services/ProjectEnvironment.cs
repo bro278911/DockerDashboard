@@ -11,6 +11,8 @@ public static class ProjectEnvironment
     public const string Development = "Development";
     public const string Stage = "Stage";
     public const string Production = "Production";
+    // 只用於「容器實際套用的環境」：up 中途失敗、無法確定時的標記，不是可選環境
+    public const string Unknown = "Unknown";
 
     public static readonly IReadOnlyList<string> All = [Development, Stage, Production];
 
