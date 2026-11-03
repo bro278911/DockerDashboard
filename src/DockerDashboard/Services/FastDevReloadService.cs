@@ -38,6 +38,11 @@ public class FastDevReloadService : IDisposable
         }
     }
 
+    internal bool IsWatching(string solutionDir)
+    {
+        lock (_lock) return _watchers.ContainsKey(solutionDir);
+    }
+
     public void Unwatch(string solutionDir)
     {
         lock (_lock)

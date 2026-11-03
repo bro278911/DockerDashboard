@@ -45,14 +45,27 @@
                 <StackPanel Margin="0,0,0,16">
                     <TextBlock Text="操作模式" Style="{StaticResource MaterialDesignSubtitle1TextBlock}" Margin="0,0,0,8" />
                     <DockPanel>
-                        <TextBlock Text="啟用傳統操作（顯示普通啟動、重啟、完整重建等非 Fast Dev 功能）"
+                        <TextBlock Text="啟用傳統操作（顯示完整重建）"
                                    VerticalAlignment="Center" DockPanel.Dock="Left" TextWrapping="Wrap" MaxWidth="520" />
                         <ToggleButton x:Name="ClassicControlsToggle" DockPanel.Dock="Right"
                                       HorizontalAlignment="Right"
                                       Style="{StaticResource MaterialDesignSwitchToggleButton}" />
                     </DockPanel>
                     <TextBlock FontSize="11" Opacity="0.7" Margin="0,4,0,0" TextWrapping="Wrap"
-                               Text="預設關閉：只保留 Fast Dev（上方啟動鈕、套用最新 code、熱重載）。打開才顯示傳統啟動/重啟/完整重建等舊操作與對應右鍵。" />
+                               Text="預設關閉。啟動／重啟／套用最新 code／熱重載永遠可用；打開才顯示「完整重建」（離開 Fast Dev、重新 build 正式 image）與對應右鍵。" />
+                </StackPanel>
+
+                <!-- Production 環境 -->
+                <StackPanel Margin="0,0,0,16">
+                    <DockPanel>
+                        <TextBlock Text="允許 Production 環境"
+                                   VerticalAlignment="Center" DockPanel.Dock="Left" TextWrapping="Wrap" MaxWidth="520" />
+                        <ToggleButton x:Name="AllowProductionToggle" DockPanel.Dock="Right"
+                                      HorizontalAlignment="Right"
+                                      Style="{StaticResource MaterialDesignSwitchToggleButton}" />
+                    </DockPanel>
+                    <TextBlock FontSize="11" Opacity="0.7" Margin="0,4,0,0" TextWrapping="Wrap"
+                               Text="預設關閉。開啟後專案右鍵「環境」才會出現 Production；本機程式將連線正式資料與外部服務，操作可能直接影響正式環境。" />
                 </StackPanel>
 
                 <!-- Docker 執行模式 -->
@@ -107,21 +120,6 @@
                                    Text="{Binding ElementName=BuildKitSlider, Path=Value, StringFormat={}{0:0}}"
                                    VerticalAlignment="Center" Margin="12,0,0,0" Width="30" />
                         <Slider x:Name="BuildKitSlider" Minimum="0" Maximum="8"
-                                TickFrequency="1" IsSnapToTickEnabled="True"
-                                Style="{StaticResource MaterialDesignDiscreteSlider}" />
-                    </DockPanel>
-                </StackPanel>
-
-                <!-- 批次啟動平行度 -->
-                <StackPanel Margin="0,0,0,16">
-                    <TextBlock Text="全部啟動平行度" Style="{StaticResource MaterialDesignSubtitle1TextBlock}" />
-                    <TextBlock FontSize="11" Opacity="0.7" Margin="0,2,0,0" TextWrapping="Wrap"
-                               Text="控制「全部啟動」同時執行的 compose 專案數。較高不一定更快，建議 2–4。" />
-                    <DockPanel Margin="0,8,0,0">
-                        <TextBlock DockPanel.Dock="Right"
-                                   Text="{Binding ElementName=StartupParallelSlider, Path=Value, StringFormat={}{0:0}}"
-                                   VerticalAlignment="Center" Margin="12,0,0,0" Width="30" />
-                        <Slider x:Name="StartupParallelSlider" Minimum="1" Maximum="8"
                                 TickFrequency="1" IsSnapToTickEnabled="True"
                                 Style="{StaticResource MaterialDesignDiscreteSlider}" />
                     </DockPanel>

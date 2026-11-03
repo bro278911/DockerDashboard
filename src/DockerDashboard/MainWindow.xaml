@@ -153,7 +153,7 @@
                         Command="{Binding AllUpCommand}"
                         IsEnabled="{Binding CanAllUp}"
                         Foreground="#4CAF50"
-                        ToolTip="Fast Dev 啟動（host build + 掛最新 dll、跑最新 code、改 .cs 約 5 秒生效，需 host .NET SDK）。左側選了 service 只起該 service、選了專案起該專案，沒選才起全部。">
+                        ToolTip="Fast Dev 啟動（host build + 掛最新 dll、跑最新 code、改 .cs 後約 20 到 45 秒生效，需 host .NET SDK）。左側選了 service 只起該 service、選了專案起該專案，沒選才起全部。">
                     <StackPanel Orientation="Horizontal">
                         <materialDesign:PackIcon Kind="Flash" VerticalAlignment="Center" />
                         <TextBlock Text="{Binding StartButtonText}" Margin="6,0,0,0" VerticalAlignment="Center" />
@@ -261,6 +261,14 @@
                     </StackPanel>
                 </Button>
 
+                <!-- 選中專案為 Production 時的警示 -->
+                <Border Background="#D32F2F" CornerRadius="4" Padding="10,4" Margin="8,0,0,0"
+                        VerticalAlignment="Center"
+                        Visibility="{Binding SelectedProjectIsProduction, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="{Binding SelectedProject.Name, StringFormat='⚠ {0} 以 Production 執行：連線正式資料與外部服務'}"
+                               FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center" />
+                </Border>
+
                 <!-- 操作中指示器 + 取消按鈕 -->
                 <ProgressBar Style="{StaticResource MaterialDesignCircularProgressBar}"
                              IsIndeterminate="True"
@@ -330,6 +338,26 @@
                                              VerticalAlignment="Center"
                                              ToolTip="有未提交的變更"
                                              Visibility="{Binding IsDirty, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                    <!-- 環境徽章：Development 不顯示 -->
+                                    <Border Background="#D32F2F" CornerRadius="8" Padding="6,2" Margin="6,0,0,0"
+                                            VerticalAlignment="Center"
+                                            ToolTip="已切換環境，但在跑的容器還是舊環境，重新啟動後才生效"
+                                            Visibility="{Binding EnvironmentPendingRestart, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="待重啟" FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="White" VerticalAlignment="Center" />
+                                    </Border>
+                                    <Border Background="#FB8C00" CornerRadius="8" Padding="6,2" Margin="6,0,0,0"
+                                            VerticalAlignment="Center"
+                                            Visibility="{Binding IsStageEnvironment, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="Stage" FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="White" VerticalAlignment="Center" />
+                                    </Border>
+                                    <Border Background="#D32F2F" CornerRadius="8" Padding="6,2" Margin="6,0,0,0"
+                                            VerticalAlignment="Center"
+                                            Visibility="{Binding IsProductionEnvironment, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="Production" FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="White" VerticalAlignment="Center" />
+                                    </Border>
                                     <StackPanel.ContextMenu>
                                         <ContextMenu>
                                             <MenuItem Header="切換分支"
@@ -357,12 +385,11 @@
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <Separator />
-                                            <MenuItem Header="啟動（快速）"
+                                            <MenuItem Header="啟動"
                                                       Command="{Binding Data.ProjectUpCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
                                                       IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
-                                                      Visibility="{Binding Data.ShowClassicControls, Source={StaticResource Proxy}, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                      ToolTip="啟動此專案全部服務，不重建 image">
+                                                      ToolTip="啟動此專案全部服務：.NET 服務 host build 後掛最新 dll，其他服務照常啟動；已在 Fast Dev 的服務不受影響">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Play" />
                                                 </MenuItem.Icon>
@@ -381,10 +408,24 @@
                                                       Command="{Binding Data.ToggleProjectFastDevCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
                                                       IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
-                                                      ToolTip="整個專案進 host-build dev 模式：改 C# 約 5 秒生效、不重建 image（需 host 端 .NET SDK）">
+                                                      ToolTip="整個專案進 host-build dev 模式：改 C# 後約 20 到 45 秒生效、不重建 image（需 host 端 .NET SDK）">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="FlashOutline" />
                                                 </MenuItem.Icon>
+                                            </MenuItem>
+                                            <Separator />
+                                            <MenuItem Header="環境"
+                                                      ItemsSource="{Binding EnvironmentChoices}">
+                                                <MenuItem.Icon>
+                                                    <materialDesign:PackIcon Kind="Earth" />
+                                                </MenuItem.Icon>
+                                                <MenuItem.ItemContainerStyle>
+                                                    <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                        <Setter Property="Header" Value="{Binding DisplayName}" />
+                                                        <Setter Property="Command" Value="{Binding Data.SelectProjectEnvironmentCommand, Source={StaticResource Proxy}}" />
+                                                        <Setter Property="CommandParameter" Value="{Binding}" />
+                                                    </Style>
+                                                </MenuItem.ItemContainerStyle>
                                             </MenuItem>
                                             <Separator />
                                             <MenuItem Header="移除專案"
@@ -424,7 +465,7 @@
                                                       Command="{Binding Data.StartServiceCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
                                                       IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
-                                                      Visibility="{Binding Data.ShowClassicControls, Source={StaticResource Proxy}, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                      ToolTip="只啟動此服務（不連帶重建其他服務）：.NET 服務 host build 後掛最新 dll，其他服務照常啟動">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Play" />
                                                 </MenuItem.Icon>
@@ -441,8 +482,7 @@
                                                       Command="{Binding Data.RestartServiceCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
                                                       IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
-                                                      Visibility="{Binding Data.ShowClassicControls, Source={StaticResource Proxy}, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                      ToolTip="只重啟 process，不重建 image">
+                                                      ToolTip="docker restart 該容器（Fast Dev 不重新 build）；沒在執行則啟動">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon Kind="Restart" />
                                                 </MenuItem.Icon>
@@ -451,7 +491,7 @@
                                                       Command="{Binding Data.ApplyLatestCodeServiceCommand, Source={StaticResource Proxy}}"
                                                       CommandParameter="{Binding}"
                                                       IsEnabled="{Binding Data.CanRebuild, Source={StaticResource Proxy}}"
-                                                      ToolTip="改了 C# 用這個：host build + 熱重載，約 5 秒；服務沒在 Fast Dev 會自動進入（需 .NET SDK）">
+                                                      ToolTip="改了 C# 用這個：host build + 重啟該服務，約 20 到 45 秒；服務沒在 Fast Dev 會自動進入（需 .NET SDK）">
                                                 <MenuItem.Icon>
                                                     <materialDesign:PackIcon>
                                                         <materialDesign:PackIcon.Style>
@@ -546,8 +586,7 @@
                                     Command="{Binding StartServiceCommand}"
                                     CommandParameter="{Binding SelectedService}"
                                     IsEnabled="{Binding SelectedService.IsStopped}"
-                                    Visibility="{Binding ShowClassicControls, Converter={StaticResource BoolToVisibilityConverter}}"
-                                    ToolTip="啟動" Foreground="#4CAF50">
+                                    ToolTip="啟動（只啟動此服務）" Foreground="#4CAF50">
                                 <materialDesign:PackIcon Kind="Play" />
                             </Button>
                             <Button Style="{StaticResource MaterialDesignIconButton}"
@@ -561,14 +600,13 @@
                                     Command="{Binding RestartServiceCommand}"
                                     CommandParameter="{Binding SelectedService}"
                                     IsEnabled="{Binding SelectedService.IsRunning}"
-                                    Visibility="{Binding ShowClassicControls, Converter={StaticResource BoolToVisibilityConverter}}"
-                                    ToolTip="重啟（快速，不重建 image）" Foreground="#FF9800">
+                                    ToolTip="重啟（docker restart，不重新 build）" Foreground="#FF9800">
                                 <materialDesign:PackIcon Kind="Restart" />
                             </Button>
                             <Button Style="{StaticResource MaterialDesignIconButton}"
                                     Command="{Binding ApplyLatestCodeServiceCommand}"
                                     CommandParameter="{Binding SelectedService}"
-                                    ToolTip="套用最新 code（改了 C#）：host build + 熱重載，約 5 秒；沒在 Fast Dev 會自動進入">
+                                    ToolTip="套用最新 code（改了 C#）：host build + 重啟該服務，約 20 到 45 秒；沒在 Fast Dev 會自動進入">
                                 <materialDesign:PackIcon>
                                     <materialDesign:PackIcon.Style>
                                         <Style TargetType="materialDesign:PackIcon">

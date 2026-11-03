@@ -23,9 +23,9 @@ public partial class SettingsWindow : Window
         ComposeV2Toggle.IsChecked = settings.UseComposeV2;
         WslDistroBox.Text = settings.WslDistroName;
         BuildKitSlider.Value = settings.BuildKitParallelism;
-        StartupParallelSlider.Value = Math.Clamp(settings.StartupParallelism, 1, 8);
         AutoCheckUpdateToggle.IsChecked = settings.AutoCheckUpdate;
         ClassicControlsToggle.IsChecked = settings.ClassicControlsEnabled;
+        AllowProductionToggle.IsChecked = settings.AllowProductionEnvironment;
         CurrentVersionText.Text = updateService.CurrentVersion;
 
         if (settings.DockerMode == DockerMode.Wsl2)
@@ -185,9 +185,9 @@ public partial class SettingsWindow : Window
         _settings.DockerMode = ModeWsl2.IsChecked == true ? DockerMode.Wsl2 : DockerMode.DockerDesktop;
         _settings.WslDistroName = WslDistroBox.Text.Trim();
         _settings.BuildKitParallelism = Math.Clamp((int)BuildKitSlider.Value, 0, 8);
-        _settings.StartupParallelism = Math.Clamp((int)StartupParallelSlider.Value, 1, 8);
         _settings.AutoCheckUpdate = AutoCheckUpdateToggle.IsChecked == true;
         _settings.ClassicControlsEnabled = ClassicControlsToggle.IsChecked == true;
+        _settings.AllowProductionEnvironment = AllowProductionToggle.IsChecked == true;
 
         if (string.IsNullOrEmpty(_settings.WslDistroName))
             _settings.WslDistroName = "Ubuntu";

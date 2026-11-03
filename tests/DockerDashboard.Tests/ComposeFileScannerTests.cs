@@ -102,4 +102,82 @@ public class ComposeFileScannerTests
             Directory.Delete(root, true);
         }
     }
+
+    [Fact]
+    public void ParseJsonConfig_讀取depends_on物件的key()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compose-scan-" + Path.GetRandomFileName());
+        Directory.CreateDirectory(root);
+        try
+        {
+            var scanner = new ComposeFileScanner(new ScanCacheService(Path.Combine(root, "cache.json")));
+            var parseJsonConfig = typeof(ComposeFileScanner).GetMethod(
+                "ParseJsonConfig",
+                BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var json = """
+                {
+                  "name": "demo",
+                  "services": {
+                    "nginx": {
+                      "depends_on": {
+                        "api": { "condition": "service_started", "required": true },
+                        "web": { "condition": "service_started", "required": true }
+                      }
+                    },
+                    "api": {}
+                  }
+                }
+                """;
+
+            var compose = Assert.IsType<ComposeFile>(
+                parseJsonConfig.Invoke(scanner, [json, Path.Combine(root, "docker-compose.yml"), root]));
+
+            Assert.Equal(["api", "web"], compose.Services.Single(s => s.Name == "nginx").DependsOn);
+            Assert.Empty(compose.Services.Single(s => s.Name == "api").DependsOn);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void ParseManually_depends_on支援清單與map兩種寫法()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compose-scan-" + Path.GetRandomFileName());
+        Directory.CreateDirectory(root);
+        try
+        {
+            var scanner = new ComposeFileScanner(new ScanCacheService(Path.Combine(root, "cache.json")));
+            var parseManually = typeof(ComposeFileScanner).GetMethod(
+                "ParseManually",
+                BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var path = Path.Combine(root, "docker-compose.yml");
+            File.WriteAllText(path, """
+                services:
+                  nginx:
+                    image: nginx
+                    depends_on:
+                      - api
+                      - web
+                  gateway:
+                    image: gw
+                    depends_on:
+                      api:
+                        condition: service_started
+                  api:
+                    image: api
+                """);
+
+            var compose = Assert.IsType<ComposeFile>(parseManually.Invoke(scanner, [path]));
+
+            Assert.Equal(["api", "web"], compose.Services.Single(s => s.Name == "nginx").DependsOn);
+            Assert.Equal(["api"], compose.Services.Single(s => s.Name == "gateway").DependsOn);
+            Assert.Empty(compose.Services.Single(s => s.Name == "api").DependsOn);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
 }

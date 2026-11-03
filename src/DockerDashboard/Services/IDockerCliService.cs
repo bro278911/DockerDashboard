@@ -18,17 +18,12 @@ public interface IDockerCliService
     /// <summary>docker ps 失敗（逾時、非零 exit code、例外）時回傳 null，呼叫端應跳過該輪更新。</summary>
     Task<List<ContainerInfo>?> GetRunningContainersAsync(CancellationToken ct = default);
 
-    ProcessStream StartLogStream(string containerNameOrId);
-
     ProcessStream StartComposeLogStream(string workingDirectory, string serviceName);
 
     ProcessStream StartComposeWatch(string workingDirectory, IEnumerable<string> serviceNames);
 
-    Task<(int ExitCode, string Output)> ComposeUpFastWithLogAsync(
-        string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default);
-
-    Task<(int ExitCode, string Output)> ComposeUpAllAsync(
-        string workingDirectory, Action<string> onOutput,
+    Task<(int ExitCode, string Output)> ComposeUpServicesAsync(
+        string workingDirectory, IReadOnlyList<string> serviceNames, Action<string> onOutput,
         CancellationToken ct, string? extraOverrideFile = null);
 
     Task<(int ExitCode, string Output)> RestartContainerAsync(
@@ -36,12 +31,6 @@ public interface IDockerCliService
 
     Task<(int ExitCode, string Output)> ComposeDownWithLogAsync(
         string workingDirectory, Action<string> onOutput, CancellationToken ct = default);
-
-    Task<(int ExitCode, string Output)> ComposeRestartWithLogAsync(
-        string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default);
-
-    Task<(int ExitCode, string Output)> ComposeRebuildRestartWithLogAsync(
-        string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default);
 
     Task<(int ExitCode, string Output)> ComposeStopWithLogAsync(
         string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default);

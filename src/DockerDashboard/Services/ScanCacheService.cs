@@ -13,7 +13,8 @@ namespace DockerDashboard.Services;
 public sealed record CachedFileStamp(string Path, long MTimeUtcTicks);
 
 public sealed record CachedServiceDto(
-    string Name, string Image, string ContainerName, string Ports, string? DockerfilePath = null);
+    string Name, string Image, string ContainerName, string Ports, string? DockerfilePath = null,
+    List<string>? DependsOn = null);
 
 public sealed record CachedDirectoryDto(
     List<CachedFileStamp> Files,
@@ -54,7 +55,8 @@ public sealed class ScanCacheService
 
         // 舊版快取缺 ProjectName / DockerfilePath，視為未命中以重掃補齊
         // （DockerfilePath 缺漏會讓 Fast Dev 只能靠資料夾名猜專案，runtime image 也退回預設）
-        if (entry.ProjectName == null || entry.Services.Any(s => s.DockerfilePath == null))
+        // 缺 DependsOn 同理：單服務啟動要靠它帶起依賴，缺漏會讓依賴被漏掉
+        if (entry.ProjectName == null || entry.Services.Any(s => s.DockerfilePath == null || s.DependsOn == null))
             return null;
 
         if (entry.Services.Any(s => !string.IsNullOrEmpty(s.DockerfilePath) && !File.Exists(s.DockerfilePath)))
@@ -88,6 +90,7 @@ public sealed class ScanCacheService
                 ContainerName = svc.ContainerName,
                 Ports = svc.Ports,
                 DockerfilePath = svc.DockerfilePath ?? string.Empty,
+                DependsOn = [.. svc.DependsOn ?? []],
                 ComposeFilePath = entry.FilePath,
                 WorkingDirectory = directory
             });
@@ -102,7 +105,8 @@ public sealed class ScanCacheService
             composeFile.FileName,
             composeFile.FilePath,
             composeFile.Services
-                .Select(s => new CachedServiceDto(s.Name, s.Image, s.ContainerName, s.Ports, s.DockerfilePath))
+                .Select(s => new CachedServiceDto(
+                    s.Name, s.Image, s.ContainerName, s.Ports, s.DockerfilePath, [.. s.DependsOn]))
                 .ToList(),
             composeFile.ProjectName);
     }

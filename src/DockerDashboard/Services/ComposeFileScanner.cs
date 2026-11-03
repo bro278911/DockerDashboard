@@ -211,6 +211,17 @@ public class ComposeFileScanner
                 dockerService.DockerfilePath = resolvedDockerfilePath;
             }
 
+            // compose config 輸出的 depends_on 是物件（key = 服務名）
+            if (service.Value.TryGetProperty("depends_on", out var dependsEl))
+            {
+                dockerService.DependsOn = dependsEl.ValueKind switch
+                {
+                    JsonValueKind.Object => [.. dependsEl.EnumerateObject().Select(p => p.Name)],
+                    JsonValueKind.Array => [.. dependsEl.EnumerateArray().Select(e => e.GetString()).OfType<string>()],
+                    _ => []
+                };
+            }
+
             if (service.Value.TryGetProperty("ports", out var portsEl) && portsEl.ValueKind == JsonValueKind.Array)
             {
                 var portStrings = new List<string>();
@@ -298,6 +309,22 @@ public class ComposeFileScanner
                         {
                             dockerService.ContainerName =
                                 ((YamlDotNet.RepresentationModel.YamlScalarNode)cnNode).Value ?? string.Empty;
+                        }
+
+                        // depends_on 有清單與 map 兩種寫法
+                        if (serviceConfig.Children.TryGetValue(
+                                new YamlDotNet.RepresentationModel.YamlScalarNode("depends_on"), out var dependsNode))
+                        {
+                            dockerService.DependsOn = dependsNode switch
+                            {
+                                YamlDotNet.RepresentationModel.YamlSequenceNode seq =>
+                                    [.. seq.Children.OfType<YamlDotNet.RepresentationModel.YamlScalarNode>()
+                                        .Select(n => n.Value).OfType<string>()],
+                                YamlDotNet.RepresentationModel.YamlMappingNode map =>
+                                    [.. map.Children.Keys.OfType<YamlDotNet.RepresentationModel.YamlScalarNode>()
+                                        .Select(n => n.Value).OfType<string>()],
+                                _ => []
+                            };
                         }
                     }
 

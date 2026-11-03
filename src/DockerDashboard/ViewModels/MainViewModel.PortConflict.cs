@@ -68,8 +68,18 @@ public partial class MainViewModel
         }
         if (conflicts.Count == 0) return true;
 
-        return await ConfirmAndStopPortConflictsAsync(conflicts);
+        return PortConflictResolver != null
+            ? await PortConflictResolver(conflicts)
+            : await ConfirmAndStopPortConflictsAsync(conflicts);
     }
+
+    // 測試用接縫：取代跳 MessageBox 的衝突確認流程
+    internal Func<List<(int Port, DockerService Wanted, DockerService Running)>, Task<bool>>? PortConflictResolver { get; set; }
+
+    // 測試用接縫：取代跳 MessageBox 的衝突詢問
+    internal Func<string, bool> ConfirmStopPortConflicts { get; set; } = message =>
+        System.Windows.MessageBox.Show(message, "Port 衝突", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning)
+        == System.Windows.MessageBoxResult.Yes;
 
     private async Task<bool> ConfirmAndStopPortConflictsAsync(List<(int Port, DockerService Wanted, DockerService Running)> conflicts)
     {
@@ -77,8 +87,7 @@ public partial class MainViewModel
             .Select(c => $"Port {c.Port}：{OwnerLabel(c.Running)} 佔用（{c.Wanted.Name} 需要）")
             .Distinct();
         var message = $"以下 Port 已被其他執行中服務佔用：\n\n{string.Join("\n", lines)}\n\n是否停止上述服務並繼續啟動？";
-        var result = System.Windows.MessageBox.Show(message, "Port 衝突", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
-        if (result != System.Windows.MessageBoxResult.Yes) return false;
+        if (!ConfirmStopPortConflicts(message)) return false;
 
         // 停止衝突服務的 await 期間 UI 未被鎖住，須佔用 _operationCts 防止使用者疊加第二個操作；
         // 結束後釋放，讓呼叫端後續的 TryBeginOperation 能接手（同為 UI 執行緒接續，中間不會被插隊）
@@ -97,6 +106,8 @@ public partial class MainViewModel
                     AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ 停止 {svc.Name} 失敗 (exit {exitCode})，Port 可能仍被佔用，已中止啟動");
                     return false;
                 }
+                // 不等非同步刷新：後續各目錄的 Port 檢查馬上要看到它已停止，否則同批會對同一個服務再問一次
+                svc.Status = ContainerStatus.Exited;
             }
             await ClearFastDevStateAsync(stopped.Where(s => s.IsFastDev).ToList());
             await _monitor.ForceRefreshAsync();
