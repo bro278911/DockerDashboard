@@ -814,8 +814,9 @@ public partial class MainViewModel
                     // 標為 Unknown，讓待重啟持續顯示、下次切換環境一定重啟這些服務
                     if (!success && upAttempted && !exitFastDev)
                     {
+                        // 環境沒變的服務即使被重建也還是同一個環境，不必標記
                         await SaveAppliedEnvironmentsAsync(appliedEnvironments
-                            .Where(a => a.Service.IsFastDev)
+                            .Where(a => a.Service.IsFastDev && a.Service.AppliedEnvironment != a.Environment)
                             .Select(a => (a.Service, ProjectEnvironment.Unknown)));
                         foreach (var project in scope.Select(ProjectOf).OfType<DockerProject>().Distinct())
                             RefreshEnvironmentPending(project);

@@ -964,6 +964,18 @@ public class MainViewModelStartupTests : IDisposable
     }
 
     [Fact]
+    public async Task 環境未變的啟動up失敗_不標記套用環境為未知()
+    {
+        await MakeFastDevAsync(_api, "api-cid");
+        _cli.UpExitCode = 1;
+
+        await _vm.StartServicesAsync(_dir, [_api]);
+
+        Assert.Equal(ProjectEnvironment.Development, _api.AppliedEnvironment);
+        Assert.False(Proj.EnvironmentPendingRestart);
+    }
+
+    [Fact]
     public async Task host_build失敗未送出up_不標記套用環境為未知()
     {
         await MakeFastDevAsync(_api, "api-cid");
