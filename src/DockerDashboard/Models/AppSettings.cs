@@ -28,6 +28,8 @@ public class AppSettings
     public List<FrontendProjectConfig> FrontendProjects { get; set; } = [];
     // 專案資料夾路徑 → ASPNETCORE_ENVIRONMENT（缺項 = Development；key 以不分大小寫比對，見 ProjectEnvironment）
     public Dictionary<string, string> ProjectEnvironments { get; set; } = [];
+    // 服務 WatchKey → 該服務容器實際套用的 ASPNETCORE_ENVIRONMENT（缺項 = Development），用來判斷環境變更後是否仍待重啟
+    public Dictionary<string, string> AppliedEnvironments { get; set; } = [];
     // 預設關：未開啟前，介面不提供 Production 選項，已存的 Production 設定載入時回落 Development
     public bool AllowProductionEnvironment { get; set; } = false;
 }

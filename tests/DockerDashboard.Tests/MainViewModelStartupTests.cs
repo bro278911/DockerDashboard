@@ -58,6 +58,7 @@ public class MainViewModelStartupTests : IDisposable
     {
         _vm.Dispose();
         FastDevOverrideStore.Delete(_dir);
+        FastDevOverrideStore.Delete(Path.Combine(_root, "proj2"));
         Directory.Delete(_root, true);
     }
 
@@ -463,9 +464,10 @@ public class MainViewModelStartupTests : IDisposable
 
     // ───── 容器重建後重啟依賴它的服務 ─────
 
-    private ContainerInfo Container(string id, string service) => new()
+    private ContainerInfo Container(string id, string service, string image = "") => new()
     {
         ID = id,
+        Image = image,
         Names = $"proj-{service}-1",
         State = "running",
         Labels = $"com.docker.compose.service={service},com.docker.compose.project=proj," +
@@ -532,10 +534,21 @@ public class MainViewModelStartupTests : IDisposable
     }
 
     [Fact]
-    public async Task 容器重建_依賴者本身就在scope內時不另外重啟()
+    public async Task 容器重建_依賴者在scope內但未重建_仍重啟()
     {
         SetupRunningNginxDependingOnApi();
         _cli.RunningContainers = [Container("new-api", "api")];
+
+        await _vm.StartServicesAsync(_dir, [_api, _nginx]);
+
+        Assert.Equal(["nginx-cid"], _cli.RestartCalls);
+    }
+
+    [Fact]
+    public async Task 容器重建_依賴者在scope內且自己也被重建_不重複重啟()
+    {
+        SetupRunningNginxDependingOnApi();
+        _cli.RunningContainers = [Container("new-api", "api"), Container("new-nginx", "nginx")];
 
         await _vm.StartServicesAsync(_dir, [_api, _nginx]);
 
@@ -861,6 +874,7 @@ public class MainViewModelStartupTests : IDisposable
     [Fact]
     public async Task 切到Production被拒絕_環境與設定都不變()
     {
+        _vm.ApplyProjectEnvironments(new AppSettings { AllowProductionEnvironment = true });
         _vm.ConfirmProductionEnvironment = _ => false;
 
         await _vm.SelectProjectEnvironmentCommand.ExecuteAsync(new EnvironmentChoice(Proj, "Production", false));
@@ -886,6 +900,7 @@ public class MainViewModelStartupTests : IDisposable
     [Fact]
     public async Task 切換環境_有服務在跑且使用者同意_重啟且不重問Production()
     {
+        _vm.ApplyProjectEnvironments(new AppSettings { AllowProductionEnvironment = true });
         await MakeFastDevAsync(_api, "api-cid");
         var productionAsked = 0;
         _vm.ConfirmProductionEnvironment = _ => { productionAsked++; return true; };
@@ -1018,6 +1033,249 @@ public class MainViewModelStartupTests : IDisposable
         Assert.Equal(["Development", "Stage", "Production"], Proj.EnvironmentChoices.Select(c => c.Name));
     }
 
+    // ───── 審查修正：Production 確認、回滾校正、待重啟、取消、Port、憑證、掃描 ─────
+
+    // 第二個 compose 目錄，內含 other 服務（有 csproj，可進 Fast Dev）
+    private (string Dir, DockerService Service) AddSecondDirectoryService()
+    {
+        var dir2 = Path.Combine(_root, "proj2");
+        Directory.CreateDirectory(Path.Combine(dir2, "other"));
+        File.WriteAllText(Path.Combine(dir2, "other", "other.csproj"),
+            "<Project><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
+        var other = NewService("other");
+        other.WorkingDirectory = dir2;
+        other.ComposeFilePath = Path.Combine(dir2, "docker-compose.yml");
+        var compose2 = new ComposeFile { DirectoryPath = dir2 };
+        compose2.Services.Add(other);
+        Proj.ComposeFiles.Add(compose2);
+        return (dir2, other);
+    }
+
+    [Fact]
+    public async Task 批次啟動_Production確認在停止衝突服務之前_拒絕時不停任何服務()
+    {
+        AddRunningHolder(("old1", "8080:80"));
+        _api.Ports = "8080:80";
+        Proj.SelectedEnvironment = "Production";
+        _vm.ConfirmProductionEnvironment = _ => false;
+        var resolverCalled = 0;
+        _vm.PortConflictResolver = _ => { resolverCalled++; return Task.FromResult(true); };
+
+        await _vm.ProjectUpCommand.ExecuteAsync(Proj);
+
+        Assert.Equal(0, resolverCalled);
+        Assert.Empty(_cli.StopCalls);
+        Assert.Empty(_cli.UpCalls);
+        Assert.Contains("Production", _vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task 批次啟動_跨目錄Production專案只問一次確認()
+    {
+        var multi = AddTwoDirectoryProject("", "");
+        multi.SelectedEnvironment = "Production";
+        var asked = 0;
+        _vm.ConfirmProductionEnvironment = _ => { asked++; return true; };
+
+        await _vm.ProjectUpCommand.ExecuteAsync(multi);
+
+        Assert.Equal(1, asked);
+        Assert.Equal(2, _cli.UpCalls.Count);
+    }
+
+    [Fact]
+    public async Task 啟動失敗_批次中已換成fastdev的服務保留旗標_其餘回滾()
+    {
+        _cli.UpExitCode = 1;
+        _cli.RunningContainers =
+            [Container("c-api", "api", "api:latest"), Container("c-orders", "orders", "orders:fastdev")];
+
+        var ok = await _vm.StartServicesAsync(_dir, [_api, _orders]);
+
+        Assert.False(ok);
+        Assert.False(_api.IsFastDev);
+        Assert.True(_orders.IsFastDev);
+        var saved = await _settings.LoadAsync();
+        Assert.DoesNotContain(_api.WatchKey, saved.FastDevEnabledServiceKeys);
+        Assert.Contains(_orders.WatchKey, saved.FastDevEnabledServiceKeys);
+        Assert.Contains(saved.FastDevConfigs, c => c.ServiceKey == _orders.WatchKey);
+        var overrideText = File.ReadAllText(FastDevOverrideStore.PathFor(_dir));
+        Assert.Contains("  orders:", overrideText);
+        Assert.DoesNotContain("  api:", overrideText);
+        Assert.True(_reload.IsWatching(_dir));
+    }
+
+    [Fact]
+    public async Task 離開FastDev失敗_部分服務已換正式image_部分仍是fastdev()
+    {
+        await MakeFastDevAsync(_api, "api-cid");
+        await MakeFastDevAsync(_orders, "orders-cid");
+        _cli.UpExitCode = 1;
+        _cli.RunningContainers =
+            [Container("c-api", "api", "api:latest"), Container("c-orders", "orders", "orders:fastdev")];
+
+        var ok = await _vm.StartServicesAsync(_dir, [_api, _orders], exitFastDev: true);
+
+        Assert.False(ok);
+        Assert.False(_api.IsFastDev);
+        Assert.True(_orders.IsFastDev);
+        var saved = await _settings.LoadAsync();
+        Assert.DoesNotContain(_api.WatchKey, saved.FastDevEnabledServiceKeys);
+        Assert.Contains(_orders.WatchKey, saved.FastDevEnabledServiceKeys);
+        Assert.Contains(saved.FastDevConfigs, c => c.ServiceKey == _orders.WatchKey);
+        var overrideText = File.ReadAllText(FastDevOverrideStore.PathFor(_dir));
+        Assert.Contains("  orders:", overrideText);
+        Assert.DoesNotContain("  api:", overrideText);
+        Assert.True(_reload.IsWatching(_dir));
+    }
+
+    [Fact]
+    public async Task 啟動失敗且取不到容器清單_沿用舊回滾行為()
+    {
+        _cli.UpExitCode = 1;
+        _cli.RunningContainers = null;
+
+        await _vm.StartServicesAsync(_dir, [_api]);
+
+        Assert.False(_api.IsFastDev);
+        Assert.DoesNotContain(_api.WatchKey, (await _settings.LoadAsync()).FastDevEnabledServiceKeys);
+    }
+
+    [Fact]
+    public void 重開App_設定已改回Development但服務套用的是Production且在跑_仍待重啟()
+    {
+        var settings = new AppSettings
+        {
+            FastDevEnabledServiceKeys = [_api.WatchKey],
+            AppliedEnvironments = new() { [_api.WatchKey] = "Production" },
+        };
+        _api.Status = ContainerStatus.Running;
+
+        _vm.RestoreFastDevStateFromSettings(settings, statusConfirmed: true);
+
+        Assert.Equal("Production", _api.AppliedEnvironment);
+        Assert.Equal("Development", Proj.SelectedEnvironment);
+        Assert.True(Proj.EnvironmentPendingRestart);
+    }
+
+    [Fact]
+    public async Task 啟動成功_記錄並持久化套用的環境_離開FastDev則移除()
+    {
+        WriteStageSettings("api");
+        Proj.SelectedEnvironment = "Stage";
+
+        await _vm.StartServicesAsync(_dir, [_api]);
+
+        Assert.Equal("Stage", _api.AppliedEnvironment);
+        Assert.Equal("Stage", (await _settings.LoadAsync()).AppliedEnvironments[_api.WatchKey]);
+
+        await _vm.StartServicesAsync(_dir, [_api], exitFastDev: true);
+
+        Assert.Equal("Development", _api.AppliedEnvironment);
+        Assert.DoesNotContain(_api.WatchKey, (await _settings.LoadAsync()).AppliedEnvironments.Keys);
+    }
+
+    [Fact]
+    public async Task 待重啟_兩個目錄分批重啟_全部服務重建後才清除()
+    {
+        var (dir2, other) = AddSecondDirectoryService();
+        other.IsFastDev = true;
+        other.Status = ContainerStatus.Running;
+        await MakeFastDevAsync(_api, "api-cid");
+        _vm.ApplyProjectEnvironments(new AppSettings { ProjectEnvironments = new() { [_dir] = "Stage" } });
+        Assert.True(Proj.EnvironmentPendingRestart);
+
+        await _vm.StartServicesAsync(_dir, [_api]);
+        Assert.True(Proj.EnvironmentPendingRestart);
+
+        await _vm.StartServicesAsync(dir2, [other]);
+        Assert.False(Proj.EnvironmentPendingRestart);
+    }
+
+    [Fact]
+    public async Task 批次啟動_前一個目錄被取消後不再處理後續目錄()
+    {
+        AddSecondDirectoryService();
+        _build.OnBuild = () => _vm.CancelOperationCommand.Execute(null);
+
+        await _vm.ProjectUpCommand.ExecuteAsync(Proj);
+
+        Assert.Single(_build.Calls);
+        Assert.Empty(_cli.UpCalls);
+        Assert.Equal("⏹ 操作已取消", _vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task 離開FastDev批次_前一個目錄被取消後不再處理後續目錄()
+    {
+        var (_, other) = AddSecondDirectoryService();
+        other.IsFastDev = true;
+        await MakeFastDevAsync(_api, "api-cid");
+        _cli.OnUp = () => _vm.CancelOperationCommand.Execute(null);
+
+        await _vm.ToggleProjectFastDevCommand.ExecuteAsync(Proj);
+
+        Assert.Single(_cli.UpCalls);
+        Assert.Equal("⏹ 操作已取消", _vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task 停止衝突服務後立即標記已停止_同批第二次檢查不再詢問()
+    {
+        AddRunningHolder(("old1", "8080:80"));
+        var multi = AddTwoDirectoryProject("8080:80", "");
+        var asked = 0;
+        _vm.ConfirmStopPortConflicts = _ => { asked++; return true; };
+
+        await _vm.ProjectUpCommand.ExecuteAsync(multi);
+
+        Assert.Equal(1, asked);
+        Assert.Single(_cli.StopCalls);
+        Assert.Equal(2, _cli.UpCalls.Count);
+    }
+
+    [Fact]
+    public async Task 關閉Production後選Production_直接拒絕不詢問()
+    {
+        _vm.ApplyProjectEnvironments(new AppSettings { AllowProductionEnvironment = false });
+        _vm.ConfirmProductionEnvironment = _ => throw new InvalidOperationException("不該詢問");
+
+        await _vm.SelectProjectEnvironmentCommand.ExecuteAsync(new EnvironmentChoice(Proj, "Production", false));
+
+        Assert.Equal("Development", Proj.SelectedEnvironment);
+        Assert.Empty((await _settings.LoadAsync()).ProjectEnvironments);
+        Assert.Contains("Production", _vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task 可選環境掃描_期間開關Production_舊結果被丟棄()
+    {
+        WriteStageSettings("api", "Stage");
+        WriteStageSettings("orders", "Production");
+        _vm.ApplyProjectEnvironments(new AppSettings { AllowProductionEnvironment = false });
+
+        var stale = _vm.RefreshAvailableEnvironmentsAsync();
+        _vm.ApplyProjectEnvironments(new AppSettings { AllowProductionEnvironment = true });
+        await stale;
+
+        Assert.Equal(["Development"], Proj.AvailableEnvironments);
+    }
+
+    [Fact]
+    public async Task 可選環境掃描_較新的掃描開始後_舊結果被丟棄()
+    {
+        WriteStageSettings("api", "Stage");
+        var applied = 0;
+        Proj.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(DockerProject.AvailableEnvironments)) applied++; };
+
+        var first = _vm.RefreshAvailableEnvironmentsAsync();
+        var second = _vm.RefreshAvailableEnvironmentsAsync();
+        await Task.WhenAll(first, second);
+
+        Assert.Equal(1, applied);
+        Assert.Equal(["Development", "Stage"], Proj.AvailableEnvironments);
+    }
+
     private sealed record UpCall(string Directory, List<string> Names, string? OverridePath, string? OverrideText);
 
     private sealed class FakeHostBuild : HostBuildService
@@ -1054,8 +1312,10 @@ public class MainViewModelStartupTests : IDisposable
         public List<UpCall> UpCalls { get; } = [];
         public List<string> RestartCalls { get; } = [];
         public List<(string Dir, string Name)> ComposeLogCalls { get; } = [];
+        public List<(string Dir, string? Name)> StopCalls { get; } = [];
         public List<ContainerInfo>? RunningContainers { get; set; } = [];
         public int UpExitCode { get; set; }
+        public Action? OnUp { get; set; }
         public int RestartExitCode { get; set; }
         // 模擬 compose 在 up 過程輸出的行（走 onOutput，等同寫進操作日誌）
         public string[] EmitOutput { get; set; } = [];
@@ -1076,6 +1336,7 @@ public class MainViewModelStartupTests : IDisposable
             // override 檔會被後續操作覆寫／刪除，呼叫當下就讀內容
             var text = extraOverrideFile != null ? File.ReadAllText(extraOverrideFile) : null;
             UpCalls.Add(new UpCall(workingDirectory, [.. serviceNames], extraOverrideFile, text));
+            OnUp?.Invoke();
             foreach (var line in EmitOutput) onOutput(line);
             return Task.FromResult((UpExitCode, string.Empty));
         }
@@ -1102,7 +1363,11 @@ public class MainViewModelStartupTests : IDisposable
         }
         public ProcessStream StartComposeWatch(string workingDirectory, IEnumerable<string> serviceNames) => throw new NotSupportedException();
         public Task<(int ExitCode, string Output)> ComposeDownWithLogAsync(string workingDirectory, Action<string> onOutput, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<(int ExitCode, string Output)> ComposeStopWithLogAsync(string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<(int ExitCode, string Output)> ComposeStopWithLogAsync(string workingDirectory, Action<string> onOutput, string? serviceName = null, CancellationToken ct = default)
+        {
+            StopCalls.Add((workingDirectory, serviceName));
+            return Task.FromResult((0, string.Empty));
+        }
         public Task<string> GetContainerLogsAsync(string containerNameOrId, int tail = 30, CancellationToken ct = default) => throw new NotSupportedException();
         public ProcessStream StartDockerEvents() => throw new NotSupportedException();
         public Task<(int ExitCode, string Output)> DockerImagePruneAsync(bool all, Action<string> onOutput, CancellationToken ct = default) => throw new NotSupportedException();

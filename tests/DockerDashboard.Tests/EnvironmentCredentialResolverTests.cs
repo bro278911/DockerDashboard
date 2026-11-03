@@ -35,12 +35,25 @@ public class EnvironmentCredentialResolverTests : IDisposable
         var dir = ServiceDir("OrderBackend");
         WriteSettings(dir, "Stage", Registration());
 
-        var cred = EnvironmentCredentialResolver.Resolve(dir, [], "Stage");
+        var cred = EnvironmentCredentialResolver.Resolve(dir, () => [], "Stage");
 
         Assert.NotNull(cred);
         Assert.Equal("t-1", cred.TenantId);
         Assert.Equal("c-1", cred.ClientId);
         Assert.Equal(FakeSecret, cred.ClientSecret);
+    }
+
+    [Fact]
+    public void 服務自己憑證齊全_不呼叫備援目錄掃描()
+    {
+        var dir = ServiceDir("OrderBackend");
+        WriteSettings(dir, "Stage", Registration());
+        var scanned = 0;
+
+        var cred = EnvironmentCredentialResolver.Resolve(dir, () => { scanned++; return []; }, "Stage");
+
+        Assert.NotNull(cred);
+        Assert.Equal(0, scanned);
     }
 
     [Fact]
@@ -54,7 +67,7 @@ public class EnvironmentCredentialResolverTests : IDisposable
         WriteSettings(auth, "Stage", Registration(client: "from-auth"));
 
         var fallback = EnvironmentCredentialResolver.EnumerateFallbackDirs(_root);
-        var cred = EnvironmentCredentialResolver.Resolve(order, fallback, "Stage");
+        var cred = EnvironmentCredentialResolver.Resolve(order, () => fallback, "Stage");
 
         Assert.Equal("from-auth", cred?.ClientId);
     }
@@ -67,7 +80,7 @@ public class EnvironmentCredentialResolverTests : IDisposable
         var logs = new List<string>();
 
         var cred = EnvironmentCredentialResolver.Resolve(
-            order, EnvironmentCredentialResolver.EnumerateFallbackDirs(_root), "Stage", logs.Add);
+            order, () => EnvironmentCredentialResolver.EnumerateFallbackDirs(_root), "Stage", logs.Add);
 
         Assert.Null(cred);
         Assert.Equal([EnvironmentCredentialResolver.NotFoundMessage], logs);
@@ -79,7 +92,7 @@ public class EnvironmentCredentialResolverTests : IDisposable
         var auth = ServiceDir("AuthenticationBackend");
         WriteSettings(auth, "Production", Registration());
 
-        Assert.Null(EnvironmentCredentialResolver.Resolve(auth, [], "Stage"));
+        Assert.Null(EnvironmentCredentialResolver.Resolve(auth, () => [], "Stage"));
     }
 
     [Fact]
@@ -93,7 +106,7 @@ public class EnvironmentCredentialResolverTests : IDisposable
             }
             """, bom: true);
 
-        Assert.Equal("s", EnvironmentCredentialResolver.Resolve(dir, [], "Stage")?.ClientSecret);
+        Assert.Equal("s", EnvironmentCredentialResolver.Resolve(dir, () => [], "Stage")?.ClientSecret);
     }
 
     [Fact]
@@ -102,7 +115,7 @@ public class EnvironmentCredentialResolverTests : IDisposable
         var dir = ServiceDir("AuthenticationBackend");
         WriteSettings(dir, "Stage", "{ not json");
 
-        Assert.Null(EnvironmentCredentialResolver.Resolve(dir, [], "Stage"));
+        Assert.Null(EnvironmentCredentialResolver.Resolve(dir, () => [], "Stage"));
     }
 
     [Fact]
@@ -111,7 +124,7 @@ public class EnvironmentCredentialResolverTests : IDisposable
         var dir = ServiceDir("AuthenticationBackend");
         WriteSettings(dir, "Stage", """{ "AppRegistration": { "TenantId": "t", "ClientId": "c", "ClientSecret": "a\nb" } }""");
 
-        Assert.Null(EnvironmentCredentialResolver.Resolve(dir, [], "Stage"));
+        Assert.Null(EnvironmentCredentialResolver.Resolve(dir, () => [], "Stage"));
     }
 
     [Fact]

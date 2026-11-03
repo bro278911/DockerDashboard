@@ -40,11 +40,16 @@ public static class EnvironmentCredentialResolver
             .OrderBy(dir => Path.GetFileName(dir).Contains(PreferredFallbackName, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
             .ToList();
 
+    // fallbackDirs 為延遲來源：掃整個目錄樹很貴，只在服務自己的憑證不齊時才呼叫
     // log 只會收到固定訊息，不含任何憑證值
     public static AzureCredential? Resolve(
-        string serviceProjectDir, IEnumerable<string> fallbackDirs, string environment, Action<string>? log = null)
+        string serviceProjectDir, Func<IReadOnlyList<string>> fallbackDirs, string environment, Action<string>? log = null)
     {
-        foreach (var dir in new[] { serviceProjectDir }.Concat(fallbackDirs).Distinct(StringComparer.OrdinalIgnoreCase))
+        var own = TryRead(Path.Combine(serviceProjectDir, $"appsettings.{environment}.json"));
+        if (own != null) return own;
+
+        foreach (var dir in fallbackDirs().Distinct(StringComparer.OrdinalIgnoreCase)
+                     .Where(d => !d.Equals(serviceProjectDir, StringComparison.OrdinalIgnoreCase)))
         {
             var credential = TryRead(Path.Combine(dir, $"appsettings.{environment}.json"));
             if (credential != null) return credential;

@@ -203,10 +203,23 @@ public partial class MainViewModel
         // 只有同批內不同 worktree 互相衝突這類真實新衝突才會再問
         var all = groups.SelectMany(g => g.Scope.Concat(
             ExpandDependencies(g.Scope, ServicesInDirectory(g.Directory)))).ToList();
+
+        // Production 確認要在停止衝突服務之前：拒絕時不能已經動到使用者的服務
+        if (!ConfirmProductionStart(all))
+        {
+            StatusMessage = "已取消以 Production 啟動";
+            return;
+        }
+
         if (!await EnsureNoPortConflictAsync(all)) return;
 
+        // 一次取消代表整批取消：前一個目錄被取消就不再處理後續目錄
+        _lastOperationCancelled = false;
         foreach (var (directory, scope) in groups)
-            await StartServicesAsync(directory, scope);
+        {
+            await StartServicesAsync(directory, scope, environmentConfirmed: true);
+            if (_lastOperationCancelled) break;
+        }
     }
 
     [RelayCommand]
@@ -562,9 +575,13 @@ public partial class MainViewModel
         if (services.Any(s => s.IsFastDev))
         {
             // 離開 Fast Dev：只還原原本在 Fast Dev 的服務，其他服務不動
+            _lastOperationCancelled = false;
             foreach (var group in services.Where(s => s.IsFastDev)
                          .GroupBy(s => s.WorkingDirectory, StringComparer.OrdinalIgnoreCase))
+            {
                 await StartServicesAsync(group.Key, group.ToList(), exitFastDev: true);
+                if (_lastOperationCancelled) break;
+            }
             return;
         }
         await StartServicesByDirectoryAsync(services);
@@ -605,6 +622,9 @@ public partial class MainViewModel
         }
     }
 
+    // 最近一次 RunOperationAsync 是否被使用者取消；批次迴圈據此在取消後停止處理後續目錄
+    private bool _lastOperationCancelled;
+
     // 單一操作鎖＋進度＋取消＋收尾。work 回傳完成後要顯示的訊息（null = 不覆寫狀態列）。
     // 訊息延後到 ForceRefreshAsync 刷新容器清單「之後」才顯示，避免容器列表還沒轉為執行中就看到「已啟動」。
     // 回傳是否取得了操作鎖
@@ -637,6 +657,7 @@ public partial class MainViewModel
         finally
         {
             wasCancelled = cts.IsCancellationRequested;
+            _lastOperationCancelled = wasCancelled;
             if (ReferenceEquals(_operationCts, cts))
                 _operationCts = null;
             cts.Dispose();
@@ -699,9 +720,9 @@ public partial class MainViewModel
                 var settings = await _settingsService.LoadAsync();
                 var enabled = new List<DockerService>();
                 var exited = new List<(DockerService Service, FastDevConfig? Config)>();
+                var resolved = new List<(DockerService Service, FastDevConfig Config)>();
                 try
                 {
-                    var resolved = new List<(DockerService Service, FastDevConfig Config)>();
                     if (exitFastDev)
                     {
                         foreach (var service in scope.Where(s => s.IsFastDev))
@@ -754,7 +775,7 @@ public partial class MainViewModel
                         }
                     }
 
-                    var overridePath = SyncFastDevOverride(workingDirectory, settings, secrets);
+                    var overridePath = await SyncFastDevOverrideAsync(workingDirectory, settings, secrets);
 
                     StatusMessage = "正在啟動容器...";
                     var upNames = scope.Select(s => s.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -768,7 +789,12 @@ public partial class MainViewModel
                     }
 
                     success = true;
-                    ClearEnvironmentPendingIfApplied(scope);
+                    // 記錄這批服務容器實際套用的環境：離開 Fast Dev 的回到一般 image（等同 Development，移除記錄）
+                    await SaveAppliedEnvironmentsAsync(exitFastDev
+                        ? exited.Select(e => (e.Service, ProjectEnvironment.Development))
+                        : resolved.Select(r => (r.Service, EnvironmentOf(r.Service))));
+                    foreach (var project in scope.Select(ProjectOf).OfType<DockerProject>().Distinct())
+                        RefreshEnvironmentPending(project);
                     if (overridePath != null) _fastDevReload.Watch(workingDirectory);
                     AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {names} 啟動完成");
                     var restartNote = await RestartDependentsOfRebuiltAsync(workingDirectory, scope, idsBefore, ct);
@@ -778,36 +804,72 @@ public partial class MainViewModel
                 finally
                 {
                     if (!success && enabled.Count + exited.Count > 0)
-                        await RollbackFastDevAsync(workingDirectory, settings, enabled, exited);
+                        await RollbackFastDevAsync(workingDirectory, settings, enabled, resolved, exited);
                 }
             });
 
         return started && success;
     }
 
-    // 失敗／取消：撤銷本次新啟用與本次離開的 Fast Dev，避免 UI 與持久化跟實際容器脫鉤
+    // 失敗／取消：依容器實際狀態校正本次新啟用與本次離開的 Fast Dev 旗標與持久化。
+    // compose up 是批次操作，失敗時部分服務可能已換好容器，盲目整批還原會讓旗標與實際脫鉤：
+    // 容器 image 是 <服務>:fastdev 視為 Fast Dev，否則視為一般 image；查不到容器（或取不到清單）才沿用舊規則
     private async Task RollbackFastDevAsync(
         string workingDirectory, AppSettings settings, IReadOnlyList<DockerService> enabled,
+        IReadOnlyList<(DockerService Service, FastDevConfig Config)> resolved,
         IReadOnlyList<(DockerService Service, FastDevConfig? Config)> exited)
     {
+        // 取消時原 token 已失效，校正用的查詢不能沿用
+        var containers = await _dockerCli.GetRunningContainersAsync(CancellationToken.None);
+        var actual = containers == null
+            ? new Dictionary<DockerService, ContainerInfo?>()
+            : ResolveContainers(containers, [.. enabled, .. exited.Select(e => e.Service)]);
+
         var changes = new List<(string Key, FastDevConfig? Config, bool Enabled)>();
         foreach (var service in enabled)
         {
-            service.IsFastDev = false;
-            changes.Add((service.WatchKey, null, false));
+            var isFastDev = IsFastDevContainer(service, actual) ?? false;
+            service.IsFastDev = isFastDev;
+            changes.Add((service.WatchKey, isFastDev ? resolved.First(r => r.Service == service).Config : null, isFastDev));
         }
         foreach (var (service, config) in exited)
         {
-            service.IsFastDev = true;
-            changes.Add((service.WatchKey, config, true));
+            var isFastDev = IsFastDevContainer(service, actual) ?? true;
+            service.IsFastDev = isFastDev;
+            changes.Add((service.WatchKey, isFastDev ? config : null, isFastDev));
         }
 
         await SaveFastDevStateAsync(settings, changes);
-        AppendLog($"[{DateTime.Now:HH:mm:ss}] ↩ Fast Dev 未套用成功，狀態已回復");
-        // 同目錄仍有既有 Fast Dev：override/watcher 是共用資源，重寫回先前組態，不重 up；
+        AppendLog($"[{DateTime.Now:HH:mm:ss}] ↩ Fast Dev 未套用成功，狀態已依容器實際狀態校正");
+        // 同目錄仍有 Fast Dev：override/watcher 是共用資源，重寫回校正後的組態，不重 up；
         // 離開 Fast Dev 時 watcher 可能已被卸除，要一併裝回
-        if (SyncFastDevOverride(workingDirectory, settings) != null)
+        if (await SyncFastDevOverrideAsync(workingDirectory, settings) != null)
             _fastDevReload.Watch(workingDirectory);
+    }
+
+    // null = 找不到該服務的容器，無從判斷
+    private static bool? IsFastDevContainer(DockerService service, IReadOnlyDictionary<DockerService, ContainerInfo?> actual) =>
+        actual.TryGetValue(service, out var container) && container != null
+            ? string.Equals(container.Image, $"{service.Name}:fastdev", StringComparison.OrdinalIgnoreCase)
+            : null;
+
+    // 只合併套用環境欄位（同 SaveFastDevStateAsync 的理由）；Development 是預設值不存
+    private Task SaveAppliedEnvironmentsAsync(IEnumerable<(DockerService Service, string Environment)> changes)
+    {
+        var list = changes.ToList();
+        foreach (var (service, environment) in list)
+            service.AppliedEnvironment = environment;
+        if (list.Count == 0) return Task.CompletedTask;
+
+        return _settingsService.UpdateAsync(latest =>
+        {
+            foreach (var (service, environment) in list)
+            {
+                latest.AppliedEnvironments.Remove(service.WatchKey);
+                if (environment != ProjectEnvironment.Development)
+                    latest.AppliedEnvironments[service.WatchKey] = environment;
+            }
+        });
     }
 
     // 只合併 Fast Dev 欄位：操作可能跑數分鐘，整份存回開頭的快照會蓋掉期間其他命令寫入的設定
@@ -864,11 +926,10 @@ public partial class MainViewModel
             .Select(kv => kv.Key)
             .ToList();
 
-    // 同目錄、不在 scope、仍在跑，且直接或間接依賴被重建服務者：nginx 的 proxy_pass 寫死主機名，
-    // 後端容器重建 IP 變動後必須重啟才會重新解析
+    // 同目錄、仍在跑、本身沒被重建，且直接或間接依賴被重建服務者：nginx 的 proxy_pass 寫死主機名，
+    // 後端容器重建 IP 變動後必須重啟才會重新解析。scope 內但這次沒被重建的（compose 判定無變更）同樣要重啟
     internal static List<DockerService> FindDependentsToRestart(
-        IReadOnlyList<DockerService> sameDirectory, IReadOnlyList<DockerService> scope,
-        IReadOnlyList<DockerService> rebuilt)
+        IReadOnlyList<DockerService> sameDirectory, IReadOnlyList<DockerService> rebuilt)
     {
         var affected = new HashSet<string>(rebuilt.Select(s => s.Name), StringComparer.OrdinalIgnoreCase);
         bool grew;
@@ -885,9 +946,9 @@ public partial class MainViewModel
             }
         } while (grew);
 
-        var scopeSet = new HashSet<DockerService>(scope);
+        var rebuiltSet = new HashSet<DockerService>(rebuilt);
         return sameDirectory
-            .Where(s => !scopeSet.Contains(s) && s.IsRunning && affected.Contains(s.Name))
+            .Where(s => !rebuiltSet.Contains(s) && s.IsRunning && affected.Contains(s.Name))
             .ToList();
     }
 
@@ -902,7 +963,7 @@ public partial class MainViewModel
         var rebuilt = DetectRebuilt(idsBefore, ResolveContainerIds(containers, scope));
         if (rebuilt.Count == 0) return string.Empty;
 
-        var targets = FindDependentsToRestart(ServicesInDirectory(workingDirectory), scope, rebuilt);
+        var targets = FindDependentsToRestart(ServicesInDirectory(workingDirectory), rebuilt);
         if (targets.Count == 0) return string.Empty;
 
         var results = await Task.WhenAll(targets.Select(async service =>
@@ -927,22 +988,26 @@ public partial class MainViewModel
     }
 
     private Dictionary<DockerService, string> ResolveContainerIds(
+        List<ContainerInfo> containers, IReadOnlyList<DockerService> services) =>
+        ResolveContainers(containers, services)
+            .ToDictionary(kv => kv.Key, kv => kv.Value?.ID ?? string.Empty);
+
+    private Dictionary<DockerService, ContainerInfo?> ResolveContainers(
         List<ContainerInfo> containers, IReadOnlyList<DockerService> services)
     {
         var (matcher, ambiguousNames) = CreateMatcher(containers);
         var wanted = new HashSet<DockerService>(services);
-        var ids = new Dictionary<DockerService, string>();
+        var matches = new Dictionary<DockerService, ContainerInfo?>();
         foreach (var compose in Projects.SelectMany(p => p.ComposeFiles))
         {
             foreach (var service in compose.Services.Where(wanted.Contains))
             {
-                var match = matcher.Resolve(
+                matches[service] = matcher.Resolve(
                     service.Name, service.ContainerName, service.WorkingDirectory,
                     compose.ProjectName, ambiguousNames);
-                ids[service] = match?.ID ?? string.Empty;
             }
         }
-        return ids;
+        return matches;
     }
 
     private List<(DockerService Service, FastDevConfig Config)> ResolveScopeConfigs(
@@ -967,13 +1032,21 @@ public partial class MainViewModel
 
     // 依目錄內「所有」Fast Dev 服務重寫 override 並回傳路徑；已無 Fast Dev 服務則刪 override、停止監看並回傳 null
     // secretsOut：收集本次寫進 override 的憑證值，供呼叫端遮蔽 compose 輸出
-    private string? SyncFastDevOverride(string workingDirectory, AppSettings settings, ICollection<string>? secretsOut = null)
+    // 憑證解析要讀檔、必要時掃整個目錄樹，組裝與寫檔都移到背景執行緒；UI 相關狀態（服務、環境、路徑）先在此擷取
+    private async Task<string?> SyncFastDevOverrideAsync(
+        string workingDirectory, AppSettings settings, ICollection<string>? secretsOut = null)
     {
         var items = AllServices()
             .Where(s => s.IsFastDev &&
                         string.Equals(s.WorkingDirectory, workingDirectory, StringComparison.OrdinalIgnoreCase))
             .Select(s => (Service: s, Config: settings.FastDevConfigs.FirstOrDefault(c => c.ServiceKey == s.WatchKey)))
             .Where(i => i.Config != null)
+            .Select(i =>
+            {
+                var (appDirHost, nugetHost) = ResolveFastDevHostPaths(i.Config!);
+                return (Name: i.Service.Name, Config: i.Config!, AppDirHost: appDirHost, NugetHost: nugetHost,
+                    ProjectDir: HostProjectDir(i.Config!), Environment: EnvironmentOf(i.Service));
+            })
             .ToList();
 
         if (items.Count == 0)
@@ -983,27 +1056,32 @@ public partial class MainViewModel
             return null;
         }
 
-        var fallbackDirs = new Lazy<List<string>>(() => EnvironmentCredentialResolver.EnumerateFallbackDirs(workingDirectory));
-        var blocks = items.Select(i =>
+        var (path, secrets, warnings) = await Task.Run(() =>
         {
-            var (appDirHost, nugetHost) = ResolveFastDevHostPaths(i.Config!);
-            var environment = EnvironmentOf(i.Service);
-            AzureCredential? credential = null;
-            if (environment != ProjectEnvironment.Development)
+            var warnings = new List<string>();
+            var secrets = new List<string>();
+            var fallbackDirs = new Lazy<List<string>>(() => EnvironmentCredentialResolver.EnumerateFallbackDirs(workingDirectory));
+            var blocks = items.Select(i =>
             {
-                credential = EnvironmentCredentialResolver.Resolve(
-                    HostProjectDir(i.Config!), fallbackDirs.Value, environment,
-                    message => AppendLog($"[{DateTime.Now:HH:mm:ss}] ⚠ {i.Service.Name}（{environment}）：{message}"));
-                if (credential != null)
+                AzureCredential? credential = null;
+                if (i.Environment != ProjectEnvironment.Development)
                 {
-                    foreach (var form in FastDevComposeGenerator.SecretForms(credential.ClientSecret))
-                        secretsOut?.Add(form);
+                    credential = EnvironmentCredentialResolver.Resolve(
+                        i.ProjectDir, () => fallbackDirs.Value, i.Environment,
+                        message => warnings.Add($"[{DateTime.Now:HH:mm:ss}] ⚠ {i.Name}（{i.Environment}）：{message}"));
+                    if (credential != null)
+                        secrets.AddRange(FastDevComposeGenerator.SecretForms(credential.ClientSecret));
                 }
-            }
-            return FastDevComposeGenerator.ServiceOverrideBlock(
-                i.Service.Name, i.Config!, appDirHost, nugetHost, environment, credential);
-        }).ToList();
-        return FastDevOverrideStore.Write(workingDirectory, FastDevComposeGenerator.CombineOverride(blocks));
+                return FastDevComposeGenerator.ServiceOverrideBlock(
+                    i.Name, i.Config, i.AppDirHost, i.NugetHost, i.Environment, credential);
+            }).ToList();
+            return (FastDevOverrideStore.Write(workingDirectory, FastDevComposeGenerator.CombineOverride(blocks)), secrets, warnings);
+        });
+
+        foreach (var warning in warnings) AppendLog(warning);
+        if (secretsOut != null)
+            foreach (var secret in secrets) secretsOut.Add(secret);
+        return path;
     }
 
     // 熱重載：host 增量 build 目錄內所有 Fast Dev 服務（只有受影響專案的 dll 會變），重啟 dll 有變動的服務，

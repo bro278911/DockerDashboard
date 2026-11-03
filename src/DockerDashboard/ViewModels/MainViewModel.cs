@@ -277,7 +277,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 service.Status is ContainerStatus.Stopped or ContainerStatus.Exited or ContainerStatus.Dead;
             service.IsFastDev = persisted && !confirmedDown;
             if (persisted && confirmedDown) staleCount++;
+            service.AppliedEnvironment = settings.AppliedEnvironments.GetValueOrDefault(
+                service.WatchKey, ProjectEnvironment.Development);
         }
+        foreach (var project in Projects)
+            RefreshEnvironmentPending(project);
         if (staleCount > 0)
             AppendLog($"[{DateTime.Now:HH:mm:ss}] 🧹 清除 {staleCount} 個殘留 Fast Dev 標記（容器未在執行）");
 
@@ -466,6 +470,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 }
             }
 
+            foreach (var project in Projects)
+                RefreshEnvironmentPending(project);
             UpdateCounts();
         });
     }

@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using DockerDashboard.Services;
 
 namespace DockerDashboard.Models;
 
@@ -29,6 +30,9 @@ public partial class DockerService : ObservableObject
 
     [ObservableProperty]
     private bool _isFastDev;
+
+    // 此服務容器實際套用的 ASPNETCORE_ENVIRONMENT（執行期狀態，由設定還原、啟動成功時更新）；與專案選定環境不同即待重啟
+    public string AppliedEnvironment { get; set; } = ProjectEnvironment.Development;
 
     public string ComposeFilePath { get; set; } = string.Empty;
 
