@@ -84,6 +84,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private int _stoppedCount;
 
+    [ObservableProperty]
+    private string _runningProjectsSummary = string.Empty;
+
     public bool CanAllUp => !IsOperating && TotalCount > 0 && RunningCount < TotalCount;
 
     // 上方啟動鈕字：跟左側選取範圍走，讓「按下會起什麼」一眼看得出來，不會誤以為都是全部
@@ -407,8 +410,22 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return merged;
     }
 
+    // 組出狀態列的「執行中：<資料夾> (<分支>)」摘要；需先對各專案 RefreshRunningCounts
+    internal static string BuildRunningProjectsSummary(IEnumerable<DockerProject> projects)
+    {
+        var items = projects
+            .Where(p => p.RunningServiceCount > 0)
+            .Select(p => p.IsGitRepo && !string.IsNullOrWhiteSpace(p.CurrentBranch)
+                ? $"{p.Name} ({p.CurrentBranch})"
+                : p.Name)
+            .ToList();
+        return items.Count == 0 ? string.Empty : $"執行中：{string.Join("、", items)}";
+    }
+
     private void UpdateCounts()
     {
+        foreach (var project in Projects) project.RefreshRunningCounts();
+
         var allServices = Projects
             .SelectMany(p => p.ComposeFiles)
             .SelectMany(c => c.Services)
@@ -417,6 +434,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         TotalCount = allServices.Count;
         RunningCount = allServices.Count(s => s.Status == ContainerStatus.Running);
         StoppedCount = TotalCount - RunningCount;
+        RunningProjectsSummary = BuildRunningProjectsSummary(Projects);
     }
 
     private (ContainerMatcher Matcher, HashSet<string> AmbiguousNames) CreateMatcher(
