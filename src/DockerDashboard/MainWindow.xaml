@@ -333,6 +333,21 @@
                                                        FontSize="11" Foreground="#1565C0" VerticalAlignment="Center" />
                                         </StackPanel>
                                     </Border>
+                                    <!-- 執行中燈號：全部在跑綠、部分在跑黃，全停不顯示 -->
+                                    <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                ToolTip="執行中服務數／總服務數"
+                                                Visibility="{Binding IsFullyRunning, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <Ellipse Width="8" Height="8" Fill="#43A047" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding RunningSummary}" Margin="4,0,0,0" FontSize="11"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                ToolTip="執行中服務數／總服務數"
+                                                Visibility="{Binding IsPartiallyRunning, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <Ellipse Width="8" Height="8" Fill="#FBC02D" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding RunningSummary}" Margin="4,0,0,0" FontSize="11"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
                                     <!-- Dirty 指示 -->
                                     <Ellipse Width="8" Height="8" Fill="#FF9800" Margin="6,0,0,0"
                                              VerticalAlignment="Center"
@@ -921,6 +936,18 @@
                         <TextBlock Text="{Binding DockerModeLabel}" FontSize="11"
                                    Foreground="White" VerticalAlignment="Center" />
                     </Border>
+                    <!-- 執行中的後端資料夾與分支；無執行中時隱藏 -->
+                    <TextBlock Text="{Binding RunningProjectsSummary}" Margin="12,0,0,0" VerticalAlignment="Center" MaxWidth="600" TextTrimming="CharacterEllipsis" ToolTip="{Binding RunningProjectsSummary}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <Trigger Property="Text" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                 </StackPanel>
                 <TextBlock DockPanel.Dock="Right" Text="{Binding StatusMessage}"
                            HorizontalAlignment="Right" VerticalAlignment="Center"

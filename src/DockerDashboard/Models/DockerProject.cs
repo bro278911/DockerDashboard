@@ -47,7 +47,27 @@ public partial class DockerProject : ObservableObject
     public IReadOnlyList<EnvironmentChoice> EnvironmentChoices =>
         [.. AvailableEnvironments.Select(e => new EnvironmentChoice(this, e, e == SelectedEnvironment))];
 
+    // 在跑的服務數（只算 Running，Restarting 不算），由 RefreshRunningCounts 重算
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsFullyRunning), nameof(IsPartiallyRunning), nameof(RunningSummary))]
+    private int _runningServiceCount;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsFullyRunning), nameof(IsPartiallyRunning), nameof(RunningSummary))]
+    private int _totalServiceCount;
+
+    public bool IsFullyRunning => TotalServiceCount > 0 && RunningServiceCount == TotalServiceCount;
+    public bool IsPartiallyRunning => RunningServiceCount > 0 && RunningServiceCount < TotalServiceCount;
+    public string RunningSummary => $"{RunningServiceCount}/{TotalServiceCount}";
+
     public ObservableCollection<ComposeFile> ComposeFiles { get; } = [];
+
+    public void RefreshRunningCounts()
+    {
+        var services = ComposeFiles.SelectMany(c => c.Services).ToList();
+        TotalServiceCount = services.Count;
+        RunningServiceCount = services.Count(s => s.Status == ContainerStatus.Running);
+    }
 }
 
 public sealed record EnvironmentChoice(DockerProject Project, string Name, bool IsCurrent)

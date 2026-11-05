@@ -52,6 +52,8 @@ public partial class MainViewModel
             if (success)
             {
                 project.CurrentBranch = await _gitService.GetCurrentBranchAsync(project.FolderPath);
+                // 分支變了，狀態列摘要要立即重算，不等下次輪詢
+                RefreshRunningProjectsSummary();
                 project.IsDirty = await _gitService.IsDirtyAsync(project.FolderPath);
                 StatusMessage = $"✅ {project.Name} 已切換到 {project.CurrentBranch}";
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ 分支切換成功: {project.CurrentBranch}");
@@ -79,6 +81,7 @@ public partial class MainViewModel
         if (project == null || !project.IsGitRepo) return;
 
         project.CurrentBranch = await _gitService.GetCurrentBranchAsync(project.FolderPath);
+        RefreshRunningProjectsSummary();
         project.IsDirty = await _gitService.IsDirtyAsync(project.FolderPath);
     }
 
@@ -126,6 +129,7 @@ public partial class MainViewModel
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] {result.Output.Trim()}");
 
             project.CurrentBranch = await _gitService.GetCurrentBranchAsync(project.FolderPath);
+            RefreshRunningProjectsSummary();
             project.IsDirty = await _gitService.IsDirtyAsync(project.FolderPath);
 
             if (result.Success)
