@@ -434,8 +434,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         TotalCount = allServices.Count;
         RunningCount = allServices.Count(s => s.Status == ContainerStatus.Running);
         StoppedCount = TotalCount - RunningCount;
-        RunningProjectsSummary = BuildRunningProjectsSummary(Projects);
+        RefreshRunningProjectsSummary();
     }
+
+    private void RefreshRunningProjectsSummary() => RunningProjectsSummary = BuildRunningProjectsSummary(Projects);
 
     private (ContainerMatcher Matcher, HashSet<string> AmbiguousNames) CreateMatcher(
         IEnumerable<ContainerInfo> containers)
