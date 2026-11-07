@@ -84,7 +84,6 @@ public partial class MainViewModel
         Func<string, CancellationToken, Task<(int ExitCode, string Output)>> cliOp,
         string statusMessage,
         string headerLog,
-        string verb,
         string successMessage,
         string failMessageFormat)
     {
@@ -106,14 +105,11 @@ public partial class MainViewModel
             try
             {
                 if (ct.IsCancellationRequested) return;
-                AppendLog($"[{DateTime.Now:HH:mm:ss}] {verb} {compose.FileName} ...");
                 var (exitCode, _) = await cliOp(compose.DirectoryPath, ct);
                 if (ct.IsCancellationRequested)
                     AppendLog($"[{DateTime.Now:HH:mm:ss}] ⏹ {compose.FileName} 已取消");
                 else if (exitCode != 0)
                     errors.Add(compose.FileName);
-                else
-                    AppendLog($"[{DateTime.Now:HH:mm:ss}] ✅ {compose.FileName} {verb}完成");
             }
             catch (OperationCanceledException)
             {
@@ -152,7 +148,10 @@ public partial class MainViewModel
                 AppendLog($"[{DateTime.Now:HH:mm:ss}] ❌ {err}");
         }
         else
+        {
             StatusMessage = successMessage;
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] {successMessage}");
+        }
     }
 
     // 啟動 = 統一流程（StartServicesAsync）：.NET 服務走 Fast Dev（host build + 掛 dll），其餘服務照常 up --build。
@@ -238,8 +237,7 @@ public partial class MainViewModel
             (dir, ct) => _dockerCli.ComposeDownWithLogAsync(dir, AppendLog, ct),
             "正在並行停止所有服務...",
             "■ 全部停止（並行）",
-            "停止",
-            "✅ 所有服務已停止",
+            "✅ 全部停止完成",
             "⚠ {0} 個服務停止失敗");
     }
 
@@ -261,7 +259,6 @@ public partial class MainViewModel
             (dir, ct) => _dockerCli.ComposeDownWithLogAsync(dir, AppendLog, ct),
             $"正在停止 {project.Name}...",
             $"■ 停止 {project.Name}",
-            "停止",
             $"✅ {project.Name} 已停止",
             "⚠ {0} 個服務停止失敗");
     }
