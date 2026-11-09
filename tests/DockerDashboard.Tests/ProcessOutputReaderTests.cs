@@ -6,12 +6,19 @@ namespace DockerDashboard.Tests;
 
 public class ProcessOutputReaderTests
 {
-    private static readonly Encoding Oem = ProcessOutputReader.OemEncoding;
+    // 固定 cp950 而非系統 OEM codepage：CI runner 是 cp437，無法表示中文
+    private static readonly Encoding Oem = CreateCp950();
+
+    private static Encoding CreateCp950()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        return Encoding.GetEncoding(950);
+    }
 
     private static async Task<List<string>> ReadAsync(byte[] bytes)
     {
         var lines = new List<string>();
-        await ProcessOutputReader.ReadLinesAsync(new MemoryStream(bytes), lines.Add, CancellationToken.None);
+        await ProcessOutputReader.ReadLinesAsync(new MemoryStream(bytes), Oem, lines.Add, CancellationToken.None);
         return lines;
     }
 
@@ -79,7 +86,7 @@ public class ProcessOutputReaderTests
         var stream = new CancelAfterReadStream(Encoding.UTF8.GetBytes("a\nb\nc"), cts);
         var lines = new List<string>();
 
-        await ProcessOutputReader.ReadLinesAsync(stream, lines.Add, cts.Token);
+        await ProcessOutputReader.ReadLinesAsync(stream, Oem, lines.Add, cts.Token);
 
         Assert.Empty(lines);
     }

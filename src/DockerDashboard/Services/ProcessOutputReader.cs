@@ -35,15 +35,15 @@ public static class ProcessOutputReader
         try
         {
             await Task.WhenAll(
-                ReadLinesAsync(stream.StandardOutput.BaseStream, onLine, ct),
-                ReadLinesAsync(stream.StandardError.BaseStream, onLine, ct));
+                ReadLinesAsync(stream.StandardOutput.BaseStream, OemEncoding, onLine, ct),
+                ReadLinesAsync(stream.StandardError.BaseStream, OemEncoding, onLine, ct));
         }
         catch (OperationCanceledException) { }
         catch (ObjectDisposedException) { }
     }
 
-    /// <summary>以 byte 切行（\r\n、\r、\n 語意同 StreamReader.ReadLine），每行獨立決定編碼</summary>
-    internal static async Task ReadLinesAsync(Stream stream, Action<string> onLine, CancellationToken ct)
+    /// <summary>以 byte 切行（\r\n、\r、\n 語意同 StreamReader.ReadLine），每行獨立決定編碼：合法 UTF-8 即 UTF-8，否則用 fallback</summary>
+    internal static async Task ReadLinesAsync(Stream stream, Encoding fallback, Action<string> onLine, CancellationToken ct)
     {
         var buffer = new byte[4096];
         var line = new MemoryStream();
@@ -73,20 +73,20 @@ public static class ProcessOutputReader
                 line.Write(buffer, start, i - start);
                 // 切換日誌時舊串流已被取消，緩衝內尚未輸出的行不得再灌進新日誌
                 if (ct.IsCancellationRequested) return;
-                Emit(line, onLine);
+                Emit(line, fallback, onLine);
                 start = i + 1;
                 pendingCr = b == (byte)'\r';
             }
             line.Write(buffer, start, read - start);
         }
 
-        if (line.Length > 0 && !ct.IsCancellationRequested) Emit(line, onLine);
+        if (line.Length > 0 && !ct.IsCancellationRequested) Emit(line, fallback, onLine);
     }
 
-    private static void Emit(MemoryStream line, Action<string> onLine)
+    private static void Emit(MemoryStream line, Encoding fallback, Action<string> onLine)
     {
         var bytes = line.GetBuffer().AsSpan(0, (int)line.Length);
-        var text = Utf8.IsValid(bytes) ? Encoding.UTF8.GetString(bytes) : OemEncoding.GetString(bytes);
+        var text = Utf8.IsValid(bytes) ? Encoding.UTF8.GetString(bytes) : fallback.GetString(bytes);
         line.SetLength(0);
         onLine(text);
     }
