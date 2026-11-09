@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 
 namespace DockerDashboard.Services;
 
@@ -15,8 +14,6 @@ public class NodeProcessService
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
             WorkingDirectory = folderPath,
         };
         // ArgumentList 會用 CRT 規則跳脫，把使用者指令裡的引號改成 cmd 不認得的 \"（例如 E2E

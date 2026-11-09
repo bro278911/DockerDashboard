@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Unicode;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -17,8 +18,6 @@ public static class ProcessOutputReader
     // OEM codepage，不受 chcp 與 StandardErrorEncoding 影響，而 npm/vite 的輸出是 UTF-8，兩者會
     // 混在同一條 stderr。因此改以 byte 讀取、逐行先嚴格 UTF-8 解碼，失敗才退回 OEM。
     // cp950 位元組恰好構成合法 UTF-8 的機率極低，視為可接受的誤判風險。
-    private static readonly Encoding StrictUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
-
     internal static readonly Encoding OemEncoding = CreateOemEncoding();
 
     private static Encoding CreateOemEncoding()
@@ -72,6 +71,8 @@ public static class ProcessOutputReader
                 if (b != (byte)'\r' && b != (byte)'\n') continue;
 
                 line.Write(buffer, start, i - start);
+                // 切換日誌時舊串流已被取消，緩衝內尚未輸出的行不得再灌進新日誌
+                if (ct.IsCancellationRequested) return;
                 Emit(line, onLine);
                 start = i + 1;
                 pendingCr = b == (byte)'\r';
@@ -79,21 +80,13 @@ public static class ProcessOutputReader
             line.Write(buffer, start, read - start);
         }
 
-        if (line.Length > 0) Emit(line, onLine);
+        if (line.Length > 0 && !ct.IsCancellationRequested) Emit(line, onLine);
     }
 
     private static void Emit(MemoryStream line, Action<string> onLine)
     {
         var bytes = line.GetBuffer().AsSpan(0, (int)line.Length);
-        string text;
-        try
-        {
-            text = StrictUtf8.GetString(bytes);
-        }
-        catch (DecoderFallbackException)
-        {
-            text = OemEncoding.GetString(bytes);
-        }
+        var text = Utf8.IsValid(bytes) ? Encoding.UTF8.GetString(bytes) : OemEncoding.GetString(bytes);
         line.SetLength(0);
         onLine(text);
     }
